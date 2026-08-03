@@ -50,3 +50,9 @@ makesomething.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# build & dev logs
+build-output*.log
+dev-server.log
+dev.log
+build.log

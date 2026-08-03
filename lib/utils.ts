@@ -1,4 +1,4 @@
-import { BakulRecord, DailySale, OperationalRecord } from "@/types/finance";
+import { BakulMaster, BakulRecord, DailySale, ItemMaster, OperationalRecord, StockInRecord, StockOutRecord } from "@/types/finance";
 
 export const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -8,12 +8,26 @@ export const rupiah = (value: number) =>
   }).format(value);
 
 export const shortNumber = (value: number) =>
-  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 }).format(value);
+  new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 }).format(value);
 
 export const toNumber = (value: string | number): number => {
   if (typeof value === "number") return value;
   if (!value) return 0;
-  return Number(value.replace(/[^0-9.-]/g, "")) || 0;
+
+  const v = value.trim();
+
+  const fractionMatch = v.match(/^(\d+(?:[.,]\d+)?)?\s*(\d+)\s*\/\s*(\d+)$/);
+  if (fractionMatch) {
+    const whole = fractionMatch[1] ? parseFloat(fractionMatch[1].replace(",", ".")) : 0;
+    const numer = parseInt(fractionMatch[2], 10);
+    const denom = parseInt(fractionMatch[3], 10);
+    if (denom > 0) return whole + numer / denom;
+  }
+
+  // Normalize comma decimal separator, then parse
+  const normalized = v.replace(/[^0-9.,\-]/g, "").replace(",", ".");
+  const num = parseFloat(normalized);
+  return Number.isFinite(num) ? num : 0;
 };
 
 export const formatCurrencyInput = (value: string): string => {
@@ -68,14 +82,24 @@ export const exportToJSON = (
   sales: DailySale[],
   bakulRecords: BakulRecord[],
   ops: OperationalRecord[],
+  items: ItemMaster[] = [],
+  bakulMasters: BakulMaster[] = [],
+  stockIn: StockInRecord[] = [],
+  stockOut: StockOutRecord[] = [],
+  opsCategories: string[] = [],
   filename: string = "buku_keuangan_backup"
 ) => {
   const payload = {
-    version: 1,
+    version: 4,
     exportedAt: new Date().toISOString(),
     sales,
     bakulRecords,
     ops,
+    items,
+    bakulMasters,
+    stockIn,
+    stockOut,
+    opsCategories,
   };
   const jsonContent = JSON.stringify(payload, null, 2);
   const blob = new Blob([jsonContent], { type: "application/json" });

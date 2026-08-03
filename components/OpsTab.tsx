@@ -25,6 +25,7 @@ interface OpsTabProps {
   onAddOps: (record: OperationalRecord) => void;
   onUpdateOps: (index: number, record: OperationalRecord) => void;
   onDeleteOps: (index: number) => void;
+  onAddOpsCategory?: (category: string) => void;
 }
 
 const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
@@ -36,6 +37,7 @@ export function OpsTab({
   onAddOps,
   onUpdateOps,
   onDeleteOps,
+  onAddOpsCategory,
 }: OpsTabProps) {
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -75,10 +77,15 @@ export function OpsTab({
     setCustomCategoryInput("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalDesc = isCustomCategory ? customCategoryInput.trim() : form.description.trim();
     if (!finalDesc || !amountNum) return;
+
+    // Register new custom category to master categories
+    if (isCustomCategory && onAddOpsCategory) {
+      onAddOpsCategory(finalDesc);
+    }
 
     const record: OperationalRecord = {
       date: form.date,
@@ -226,75 +233,77 @@ export function OpsTab({
         )}
       </div>
 
-      {/* Data List Panel */}
-      <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-black text-[#191712]">Rincian Operasional</h2>
-          <div className="w-full sm:w-64">
-            <Input
-              size="sm"
-              placeholder="Cari kategori/tanggal..."
-              value={search}
-              onValueChange={setSearch}
-              startContent={<Search size={14} className="text-[#706858]" />}
-              radius="sm"
-              isClearable
-              onClear={() => setSearch("")}
-            />
+{/* Data List Panel */}
+      {role === "admin" && (
+        <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-xl font-black text-[#191712]">Rincian Operasional</h2>
+            <div className="w-full sm:w-64">
+              <Input
+                size="sm"
+                placeholder="Cari kategori/tanggal..."
+                value={search}
+                onValueChange={setSearch}
+                startContent={<Search size={14} className="text-[#706858]" />}
+                radius="sm"
+                isClearable
+                onClear={() => setSearch("")}
+              />
+            </div>
+          </div>
+
+          <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
+            {filteredOps.length === 0 ? (
+              <div className="py-12 text-center text-sm text-[#706858]">
+                Tidak ditemukan rincian operasional.
+              </div>
+            ) : (
+              filteredOps.map(({ item, originalIndex }) => (
+                <Card
+                  key={`${item.date}-${item.description}-${originalIndex}`}
+                  shadow="none"
+                  radius="sm"
+                  className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
+                >
+                  <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="font-black text-[#191712] capitalize">{item.description}</h3>
+                      <p className="text-xs text-[#706858] font-medium">
+                        {item.date} {item.note ? `• ${item.note}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 justify-between sm:justify-end">
+                      <span className="font-mono font-black text-[#8f321a]">{rupiah(item.amount)}</span>
+                      {role === "admin" && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            className="font-bold min-w-unit-12"
+                            onPress={() => handleStartEdit(item, originalIndex)}
+                            radius="sm"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                            onPress={() => setDeleteConfirmIndex(originalIndex)}
+                            radius="sm"
+                          >
+                            Hapus
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardBody>
+                </Card>
+              ))
+            )}
           </div>
         </div>
-
-        <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
-          {filteredOps.length === 0 ? (
-            <div className="py-12 text-center text-sm text-[#706858]">
-              Tidak ditemukan rincian operasional.
-            </div>
-          ) : (
-            filteredOps.map(({ item, originalIndex }) => (
-              <Card
-                key={`${item.date}-${item.description}-${originalIndex}`}
-                shadow="none"
-                radius="sm"
-                className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
-              >
-                <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="font-black text-[#191712] capitalize">{item.description}</h3>
-                    <p className="text-xs text-[#706858] font-medium">
-                      {item.date} {item.note ? `• ${item.note}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4 justify-between sm:justify-end">
-                    <span className="font-mono font-black text-[#8f321a]">{rupiah(item.amount)}</span>
-                    {role === "admin" && (
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="flat"
-                          className="font-bold min-w-unit-12"
-                          onPress={() => handleStartEdit(item, originalIndex)}
-                          radius="sm"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="flat"
-                          className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
-                          onPress={() => setDeleteConfirmIndex(originalIndex)}
-                          radius="sm"
-                        >
-                          Hapus
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardBody>
-              </Card>
-            ))
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">

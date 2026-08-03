@@ -29,6 +29,44 @@ export type OperationalRecord = {
   note: string;
 };
 
+export type ItemMaster = {
+  id: string;
+  name: string;
+  buyPrice: number;
+  sellPrice: number;
+};
+
+export type BakulMaster = {
+  id: string;
+  name: string;
+  address: string;
+};
+
+export type StockInRecord = {
+  id: string;
+  date: string;
+  itemName: string;
+  quantity: number;
+};
+
+export type StockOutRecord = {
+  id: string;
+  date: string;
+  bakulName: string;
+  itemName: string;
+  quantity: number;
+  price: number;
+  saleType?: "eceran" | "grosir";
+};
+
+export type PiutangPayment = {
+  id: string;
+  date: string;
+  bakulName: string;
+  amount: number;
+  note: string;
+};
+
 export type Role = "user" | "admin";
 
 export type FinanceSummary = {
@@ -50,4 +88,67 @@ export type BakulSummaryItem = {
   paid: number;
   balance: number;
   count: number;
+};
+
+// ===== Laporan Harian & Laba Rugi =====
+
+export type SaleType = "eceran" | "grosir";
+
+export type SaleBreakdown = {
+  eceranQty: number;
+  eceranOmzet: number;
+  grosirQty: number;
+  grosirOmzet: number;
+  eceranCount: number;
+  grosirCount: number;
+};
+
+export type DailyReportItem = {
+  date: string;
+  itemName: string;
+  bakulName: string;
+  quantity: number;
+  sellPrice: number;
+  buyPrice: number;
+  omzet: number; // qty * sellPrice
+  modalCost: number; // qty * buyPrice
+  profit: number; // omzet - modalCost
+  saleType: SaleType;
+};
+
+export type DailyReport = {
+  date: string;
+  totalQuantity: number;
+  totalOmzet: number;
+  totalModal: number;
+  totalProfit: number;
+  totalOperational: number;
+  netProfit: number;
+  saleBreakdown: SaleBreakdown;
+  items: DailyReportItem[];
+};
+
+export type PeriodProfit = {
+  label: string;
+  period: string;
+  totalQuantity: number;
+  totalOmzet: number;
+  totalModal: number;
+  totalProfit: number;
+  totalOperational: number;
+  netProfit: number;
+  saleBreakdown: SaleBreakdown;
+};
+
+export type ProfitLossSummary = {
+  daily: DailyReport[];
+  weekly: PeriodProfit[];
+  monthly: PeriodProfit[];
+  totalOmzet: number;
+  totalModal: number;
+  totalProfit: number;
+  totalOperational: number;
+  netProfit: number;
+  totalQuantity: number;
+  saleBreakdown: SaleBreakdown;
 };

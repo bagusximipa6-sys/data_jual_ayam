@@ -18,7 +18,7 @@ import { Key, useState } from "react";
 import { Role } from "@/types/finance";
 
 interface HeaderProps {
-  salesCount: number;
+  stockOutCount: number;
   role: Role;
   adminUnlocked: boolean;
   onRoleChange: (key: Key) => void;
@@ -30,7 +30,7 @@ interface HeaderProps {
 }
 
 export function Header({
-  salesCount,
+  stockOutCount,
   role,
   adminUnlocked,
   onRoleChange,
@@ -79,7 +79,7 @@ export function Header({
                 Buku Keuangan Digital
               </span>
               <Chip className="bg-[#d9ff67] px-2 font-extrabold text-[#191712]" size="sm" variant="flat">
-                {salesCount} Rekap
+                {stockOutCount} Transaksi
               </Chip>
             </div>
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl text-[#191712]">
@@ -103,14 +103,14 @@ export function Header({
                 className="bg-[#f7f5ef] rounded-lg font-bold"
                 radius="sm"
               >
-                <SelectItem key="all">Semua Periode</SelectItem>
-                {availableMonths.map((m) => (
-                  <SelectItem key={m}>{m}</SelectItem>
+                {availableMonths.map((month) => (
+                 <SelectItem key={month}>
+                    {month}
+                  </SelectItem>
                 ))}
               </Select>
             </div>
           )}
-
           {/* Role Switcher */}
           <Tabs
             selectedKey={role}
