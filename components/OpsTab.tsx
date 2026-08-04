@@ -13,7 +13,7 @@ import {
   SelectItem,
   Textarea,
 } from "@heroui/react";
-import { AlertCircle, Edit2, Plus, Search, Trash2, Tag } from "lucide-react";
+import { AlertCircle, Edit2, Plus, Search, Tag } from "lucide-react";
 import { useState } from "react";
 import { rupiah, toNumber } from "@/lib/utils";
 import { OperationalRecord, Role } from "@/types/finance";

@@ -1,8 +1,21 @@
 "use client";
 
-import { Button, Input, Tab, Tabs } from "@heroui/react";
+import { Button, Input } from "@heroui/react";
 import { motion } from "framer-motion";
-import { Boxes, CircleDollarSign, Package, ShoppingCart, Tag, TrendingUp } from "lucide-react";
+import {
+  Boxes,
+  CircleDollarSign,
+  ClipboardList,
+  Database,
+  FileBarChart,
+  HandCoins,
+  Package,
+  PackagePlus,
+  ShoppingCart,
+  Tag,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import type { Key } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -389,14 +402,14 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     localStorage.removeItem(OPS_CATEGORIES_KEY);
   };
 
-  const menus = [
-    ["dashboard", "Laporan Harian"],
-    ["stockin", "Barang Masuk"],
-    ["stockout", "Barang Keluar"],
-    ["ops", "Operasional"],
-    ["bakul", "Piutang Bakul"],
-    ["laporan", "Laporan Keuangan & Laba Rugi"],
-    ["master", "Master & Cadangan"],
+const menus = [
+    { key: "dashboard", label: "Laporan Harian", icon: ClipboardList },
+    { key: "stockin", label: "Barang Masuk", icon: PackagePlus },
+    { key: "stockout", label: "Barang Keluar", icon: Package },
+    { key: "ops", label: "Operasional", icon: HandCoins },
+    { key: "bakul", label: "Piutang Bakul", icon: Users },
+    { key: "laporan", label: "Laba & Rugi", icon: FileBarChart },
+    { key: "master", label: "Master & Cadangan", icon: Database },
   ];
 
   if (!isClient) {
@@ -426,23 +439,33 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
 
       {/* Main Container */}
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
-        {/* Navigation Tabs */}
-        <div className="border-b border-[#191712]/10 bg-white/50 backdrop-blur-xs rounded-2xl p-2 shadow-xs">
-          <Tabs
-            selectedKey={menu}
-            onSelectionChange={(key) => setMenu(String(key))}
-            variant="underlined"
-            classNames={{
-              tabList: "w-full gap-2 overflow-x-auto border-b-0",
-              tab: "h-11 px-4 text-sm font-bold",
-              tabContent: "text-[#706858] group-data-[selected=true]:text-[#191712]",
-              cursor: "bg-[#191712] h-1 rounded-full",
-            }}
-          >
-            {menus.map(([key, label]) => (
-              <Tab key={key} title={label} />
-            ))}
-          </Tabs>
+{/* Navigation Tabs */}
+        <div className="rounded-2xl bg-white/70 p-2 shadow-sm backdrop-blur-sm border border-[#191712]/5">
+          <nav className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+            {menus.map(({ key, label, icon: Icon }) => {
+              const active = menu === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMenu(key)}
+                  className={`group flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-center transition-all sm:flex-row sm:px-3 sm:py-2 ${
+                    active
+                      ? "bg-[#191712] text-white shadow-md"
+                      : "bg-[#f7f5ef] text-[#706858] hover:bg-[#f0eadb] hover:text-[#191712]"
+                  }`}
+                >
+                  <Icon
+                    size={18}
+                    className={`shrink-0 ${active ? "text-[#d9ff67]" : "text-[#706858] group-hover:text-[#191712]"}`}
+                  />
+                  <span className="text-[10px] font-bold leading-tight sm:text-[11px] sm:font-semibold">
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
         {/* Dynamic Tab Content */}
@@ -457,11 +480,11 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
                     Rekap total barang keluar dan total omzet / penjualan pada hari tersebut.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+<div className="flex flex-wrap items-center gap-2">
                   <Input
                     type="date"
                     size="sm"
-                    className="w-[180px]"
+                    className="w-full sm:w-[180px]"
                     value={reportDate}
                     onValueChange={setReportDate}
                     aria-label="Pilih Tanggal Laporan"
@@ -617,13 +640,13 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {dailyRecords.map((record) => (
+{dailyRecords.map((record) => (
                       <div
                         key={record.id}
-                        className="flex items-center justify-between rounded-xl bg-[#f7f5ef] px-4 py-3 text-xs"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#f7f5ef] px-4 py-3 text-xs"
                       >
                         <div>
-                          <div className="flex items-center gap-2">
+<div className="flex items-center gap-2">
                             <p className="font-black text-sm text-[#191712]">{record.itemName}</p>
                             <span
                               className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
@@ -633,6 +656,17 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
                               }`}
                             >
                               {record.saleType ?? "eceran"}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                                (record.paymentMethod ?? "cash") === "hutang"
+                                  ? "bg-[#ffe2d8] text-[#8f321a]"
+                                  : (record.paymentMethod ?? "cash") === "transfer"
+                                  ? "bg-[#e6f1ff] text-[#173a61]"
+                                  : "bg-[#f0eadb] text-[#191712]"
+                              }`}
+                            >
+                              {record.paymentMethod ?? "cash"}
                             </span>
                           </div>
                           <p className="text-[#706858]">{record.bakulName} • Harga jual {rupiah(record.price)}</p>
@@ -660,16 +694,16 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
             />
           )}
 
-          {menu === "stockout" && (
-            <StockOutTab
+{menu === "stockout" && (
+<StockOutTab
               stockOut={stockOut}
               itemNames={itemNames}
               bakulNames={bakulNames}
               items={items}
-              role={role}
               onAddStockOut={handleAddStockOut}
               onUpdateStockOut={handleUpdateStockOut}
               onDeleteStockOut={handleDeleteStockOut}
+              onAddBakul={handleAddBakul}
             />
           )}
 

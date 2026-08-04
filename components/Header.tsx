@@ -88,10 +88,10 @@ export function Header({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+<div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
           {/* Month Selector */}
           {availableMonths.length > 0 && (
-            <div className="min-w-[160px]">
+            <div className="w-full sm:w-auto sm:min-w-[160px]">
               <Select
                 aria-label="Pilih Periode Bulan"
                 size="sm"
@@ -111,14 +111,14 @@ export function Header({
               </Select>
             </div>
           )}
-          {/* Role Switcher */}
+{/* Role Switcher */}
           <Tabs
             selectedKey={role}
             onSelectionChange={handleTabsChange}
             radius="sm"
             size="sm"
             classNames={{
-              tabList: "bg-[#f0eadb] shadow-inner p-1",
+              tabList: "w-full sm:w-auto bg-[#f0eadb] shadow-inner p-1",
               cursor: "bg-[#191712] shadow-sm",
               tabContent: "font-bold text-[#6f6758] group-data-[selected=true]:text-white",
             }}

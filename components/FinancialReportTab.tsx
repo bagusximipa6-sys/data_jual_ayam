@@ -1,12 +1,17 @@
 "use client";
 
 import { Button, Chip, Divider, Input } from "@heroui/react";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { getMonthLabel, rupiah, shortNumber } from "@/lib/utils";
 import {
+  emptyPaymentBreakdown,
   ItemMaster,
   OperationalRecord,
+  PaymentBreakdown,
+  PaymentMethod,
   ProfitLossSummary,
   Role,
   SaleBreakdown,
@@ -58,6 +63,40 @@ const mergeBreakdown = (target: SaleBreakdown, source: SaleBreakdown) => {
   target.grosirCount += source.grosirCount;
 };
 
+const addToPaymentBreakdown = (
+  bd: PaymentBreakdown,
+  method: PaymentMethod | undefined,
+  qty: number,
+  omzet: number
+) => {
+  const m = method ?? "cash";
+  if (m === "cash") {
+    bd.cashQty += qty;
+    bd.cashOmzet += omzet;
+    bd.cashCount += 1;
+  } else if (m === "transfer") {
+    bd.transferQty += qty;
+    bd.transferOmzet += omzet;
+    bd.transferCount += 1;
+  } else {
+    bd.hutangQty += qty;
+    bd.hutangOmzet += omzet;
+    bd.hutangCount += 1;
+  }
+};
+
+const mergePaymentBreakdown = (target: PaymentBreakdown, source: PaymentBreakdown) => {
+  target.cashQty += source.cashQty;
+  target.cashOmzet += source.cashOmzet;
+  target.transferQty += source.transferQty;
+  target.transferOmzet += source.transferOmzet;
+  target.hutangQty += source.hutangQty;
+  target.hutangOmzet += source.hutangOmzet;
+  target.cashCount += source.cashCount;
+  target.transferCount += source.transferCount;
+  target.hutangCount += source.hutangCount;
+};
+
 const buildProfitLoss = (
   stockOut: StockOutRecord[],
   items: ItemMaster[],
@@ -85,7 +124,7 @@ const buildProfitLoss = (
     const modalCost = record.quantity * buyPrice;
     const profit = omzet - modalCost;
 
-    const existing = dailyMap.get(record.date);
+const existing = dailyMap.get(record.date);
     const itemRow = {
       date: record.date,
       itemName: record.itemName,
@@ -97,6 +136,7 @@ const buildProfitLoss = (
       modalCost,
       profit,
       saleType: (record.saleType ?? "eceran") as SaleType,
+      paymentMethod: record.paymentMethod,
     };
 
     if (existing) {
@@ -106,9 +146,12 @@ const buildProfitLoss = (
       existing.totalModal += modalCost;
       existing.totalProfit += profit;
       addToBreakdown(existing.saleBreakdown, record.saleType, record.quantity, omzet);
+      addToPaymentBreakdown(existing.paymentBreakdown, record.paymentMethod, record.quantity, omzet);
     } else {
       const breakdown = emptyBreakdown();
       addToBreakdown(breakdown, record.saleType, record.quantity, omzet);
+      const paymentBreakdown = emptyPaymentBreakdown();
+      addToPaymentBreakdown(paymentBreakdown, record.paymentMethod, record.quantity, omzet);
       dailyMap.set(record.date, {
         date: record.date,
         totalQuantity: record.quantity,
@@ -118,6 +161,7 @@ const buildProfitLoss = (
         totalOperational: 0,
         netProfit: profit,
         saleBreakdown: breakdown,
+        paymentBreakdown,
         items: [itemRow],
       });
     }
@@ -167,6 +211,7 @@ const existingWeek = weeklyMap.get(weekKey);
       existingWeek.totalOperational += day.totalOperational;
       existingWeek.netProfit += day.netProfit;
       mergeBreakdown(existingWeek.saleBreakdown, day.saleBreakdown);
+      mergePaymentBreakdown(existingWeek.paymentBreakdown, day.paymentBreakdown);
     } else {
       weeklyMap.set(weekKey, {
         label: weekLabel,
@@ -178,6 +223,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalOperational: day.totalOperational,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
+        paymentBreakdown: { ...day.paymentBreakdown },
       });
     }
 
@@ -191,6 +237,7 @@ const existingWeek = weeklyMap.get(weekKey);
       existingMonth.totalOperational += day.totalOperational;
       existingMonth.netProfit += day.netProfit;
       mergeBreakdown(existingMonth.saleBreakdown, day.saleBreakdown);
+      mergePaymentBreakdown(existingMonth.paymentBreakdown, day.paymentBreakdown);
     } else {
       monthlyMap.set(monthKey, {
         label: getMonthLabel(monthKey),
@@ -202,6 +249,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalOperational: day.totalOperational,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
+        paymentBreakdown: { ...day.paymentBreakdown },
       });
     }
   }
@@ -210,8 +258,10 @@ const existingWeek = weeklyMap.get(weekKey);
   const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.period.localeCompare(b.period));
 
   const totalBreakdown = emptyBreakdown();
+  const totalPaymentBreakdown = emptyPaymentBreakdown();
   for (const day of daily) {
     mergeBreakdown(totalBreakdown, day.saleBreakdown);
+    mergePaymentBreakdown(totalPaymentBreakdown, day.paymentBreakdown);
   }
 
   return {
@@ -225,6 +275,7 @@ const existingWeek = weeklyMap.get(weekKey);
     netProfit: daily.reduce((sum, d) => sum + d.netProfit, 0),
     totalQuantity: daily.reduce((sum, d) => sum + d.totalQuantity, 0),
     saleBreakdown: totalBreakdown,
+    paymentBreakdown: totalPaymentBreakdown,
   };
 };
 
@@ -271,9 +322,119 @@ const exportProfitCSV = (summary: ProfitLossSummary) => {
   const link = document.createElement("a");
   link.setAttribute("href", url);
   link.setAttribute("download", "laporan_laba_rugi.csv");
-  document.body.appendChild(link);
+document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+const exportProfitPDF = (summary: ProfitLossSummary) => {
+  const doc = new jsPDF();
+
+  // Header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Laporan Keuangan & Laba Rugi", 14, 16);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Buku Keuangan Usaha - Data Jual Telur", 14, 22);
+  doc.text(`Dicetak: ${new Date().toLocaleString("id-ID")}`, 14, 27);
+  doc.setDrawColor(180);
+  doc.line(14, 30, 196, 30);
+
+  // Summary block
+  let y = 36;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Ringkasan", 14, y);
+  y += 6;
+  const lines: Array<[string, string]> = [
+    ["Total Barang Keluar", `${shortNumber(summary.totalQuantity)} kg`],
+    ["Total Omzet / Penjualan", rupiah(summary.totalOmzet)],
+    ["Total Modal (Harga Beli)", rupiah(summary.totalModal)],
+    ["Total Laba Kotor", rupiah(summary.totalProfit)],
+    ["Biaya Operasional", rupiah(summary.totalOperational)],
+    ["Laba Bersih", rupiah(summary.netProfit)],
+    ["Penjualan Eceran", `${shortNumber(summary.saleBreakdown.eceranQty)} kg • ${rupiah(summary.saleBreakdown.eceranOmzet)}`],
+    ["Penjualan Grosir", `${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`],
+  ];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  lines.forEach(([label, value]) => {
+    doc.text(label, 16, y);
+    doc.text(value, 130, y);
+    y += 5.5;
+  });
+
+  // Monthly table
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Pendapatan Bulanan", 14, y);
+  autoTable(doc, {
+    startY: y + 3,
+    head: [["Periode", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+    body: summary.monthly.map((row) => [
+      row.label,
+      shortNumber(row.totalQuantity),
+      rupiah(row.totalOmzet),
+      rupiah(row.totalModal),
+      rupiah(row.totalProfit),
+      rupiah(row.totalOperational),
+      rupiah(row.netProfit),
+    ]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [247, 245, 239] },
+  });
+
+  // Weekly table
+  const weeklyStart = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Pendapatan Mingguan", 14, weeklyStart);
+  autoTable(doc, {
+    startY: weeklyStart + 3,
+    head: [["Periode Minggu", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+    body: summary.weekly.map((row) => [
+      row.label,
+      shortNumber(row.totalQuantity),
+      rupiah(row.totalOmzet),
+      rupiah(row.totalModal),
+      rupiah(row.totalProfit),
+      rupiah(row.totalOperational),
+      rupiah(row.netProfit),
+    ]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [247, 245, 239] },
+  });
+
+  // Daily table
+  const dailyStart = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Pendapatan Harian", 14, dailyStart);
+  autoTable(doc, {
+    startY: dailyStart + 3,
+    head: [["Tanggal", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+    body: summary.daily
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((d) => [
+        d.date,
+        shortNumber(d.totalQuantity),
+        rupiah(d.totalOmzet),
+        rupiah(d.totalModal),
+        rupiah(d.totalProfit),
+        rupiah(d.totalOperational),
+        rupiah(d.netProfit),
+      ]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [247, 245, 239] },
+  });
+
+  doc.save("laporan_laba_rugi.pdf");
 };
 
 export function FinancialReportTab({ stockOut, items, ops, role }: FinancialReportTabProps) {
@@ -300,11 +461,11 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
             Pendapatan Harian = (Stok Keluar × Harga Jual) − (Stok Keluar × Harga Beli)
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+<div className="flex flex-wrap items-center gap-2">
           <Input
             type="date"
             size="sm"
-            className="w-[180px]"
+            className="w-full sm:w-[180px]"
             value={dateFilter}
             onValueChange={setDateFilter}
             aria-label="Filter Tanggal"
@@ -312,7 +473,7 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
             isClearable
             onClear={() => setDateFilter("")}
           />
-          <Button
+<Button
             size="sm"
             className="bg-[#191712] font-bold text-white"
             startContent={<FileSpreadsheet size={15} />}
@@ -320,6 +481,16 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
             radius="sm"
           >
             Export CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            className="bg-[#e6f1ff] font-bold text-[#173a61]"
+            startContent={<FileText size={15} />}
+            onPress={() => exportProfitPDF(summary)}
+            radius="sm"
+          >
+            Export PDF
           </Button>
         </div>
       </div>
@@ -343,7 +514,7 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
             />
           </div>
 
-          {/* Detail: Operasional & Grosir/Eceran */}
+{/* Detail: Operasional & Grosir/Eceran */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
               label="Biaya Operasional"
@@ -364,6 +535,25 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
               label="Penjualan Grosir"
               value={`${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`}
               tone="purple"
+            />
+          </div>
+
+          {/* Payment Method Breakdown */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <SummaryCard
+              label="Pembayaran Cash"
+              value={`${shortNumber(summary.paymentBreakdown.cashQty)} kg • ${rupiah(summary.paymentBreakdown.cashOmzet)}`}
+              tone="green"
+            />
+            <SummaryCard
+              label="Pembayaran Transfer"
+              value={`${shortNumber(summary.paymentBreakdown.transferQty)} kg • ${rupiah(summary.paymentBreakdown.transferOmzet)}`}
+              tone="blue"
+            />
+            <SummaryCard
+              label="Pembayaran Hutang"
+              value={`${shortNumber(summary.paymentBreakdown.hutangQty)} kg • ${rupiah(summary.paymentBreakdown.hutangOmzet)}`}
+              tone="red"
             />
           </div>
 
@@ -525,7 +715,7 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
                           >
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-bold text-[#191712]">{item.itemName}</span>
-                              <span
+<span
                                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                                   item.saleType === "grosir"
                                     ? "bg-[#fff3cd] text-[#8f6b00]"
@@ -533,6 +723,17 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
                                 }`}
                               >
                                 {item.saleType}
+                              </span>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                                  (item.paymentMethod ?? "cash") === "hutang"
+                                    ? "bg-[#ffe2d8] text-[#8f321a]"
+                                    : (item.paymentMethod ?? "cash") === "transfer"
+                                    ? "bg-[#e6f1ff] text-[#173a61]"
+                                    : "bg-[#f0eadb] text-[#191712]"
+                                }`}
+                              >
+                                {item.paymentMethod ?? "cash"}
                               </span>
                               <span className="text-[#706858]"> • {item.bakulName}</span>
                             </div>

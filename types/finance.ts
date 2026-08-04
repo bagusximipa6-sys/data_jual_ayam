@@ -57,6 +57,7 @@ export type StockOutRecord = {
   quantity: number;
   price: number;
   saleType?: "eceran" | "grosir";
+  paymentMethod?: "cash" | "transfer" | "hutang";
 };
 
 export type PiutangPayment = {
@@ -94,6 +95,8 @@ export type BakulSummaryItem = {
 
 export type SaleType = "eceran" | "grosir";
 
+export type PaymentMethod = "cash" | "transfer" | "hutang";
+
 export type SaleBreakdown = {
   eceranQty: number;
   eceranOmzet: number;
@@ -102,6 +105,30 @@ export type SaleBreakdown = {
   eceranCount: number;
   grosirCount: number;
 };
+
+export type PaymentBreakdown = {
+  cashQty: number;
+  cashOmzet: number;
+  transferQty: number;
+  transferOmzet: number;
+  hutangQty: number;
+  hutangOmzet: number;
+  cashCount: number;
+  transferCount: number;
+  hutangCount: number;
+};
+
+export const emptyPaymentBreakdown = (): PaymentBreakdown => ({
+  cashQty: 0,
+  cashOmzet: 0,
+  transferQty: 0,
+  transferOmzet: 0,
+  hutangQty: 0,
+  hutangOmzet: 0,
+  cashCount: 0,
+  transferCount: 0,
+  hutangCount: 0,
+});
 
 export type DailyReportItem = {
   date: string;
@@ -114,6 +141,7 @@ export type DailyReportItem = {
   modalCost: number; // qty * buyPrice
   profit: number; // omzet - modalCost
   saleType: SaleType;
+  paymentMethod?: PaymentMethod;
 };
 
 export type DailyReport = {
@@ -125,6 +153,7 @@ export type DailyReport = {
   totalOperational: number;
   netProfit: number;
   saleBreakdown: SaleBreakdown;
+  paymentBreakdown: PaymentBreakdown;
   items: DailyReportItem[];
 };
 
@@ -138,6 +167,7 @@ export type PeriodProfit = {
   totalOperational: number;
   netProfit: number;
   saleBreakdown: SaleBreakdown;
+  paymentBreakdown: PaymentBreakdown;
 };
 
 export type ProfitLossSummary = {
@@ -151,4 +181,5 @@ export type ProfitLossSummary = {
   netProfit: number;
   totalQuantity: number;
   saleBreakdown: SaleBreakdown;
+  paymentBreakdown: PaymentBreakdown;
 };

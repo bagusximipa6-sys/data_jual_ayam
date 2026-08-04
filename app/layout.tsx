@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -10,6 +10,12 @@ export const metadata: Metadata = {
     description: "Aplikasi pencatatan keuangan usaha perdagangan telur, rekap penjualan, operasional, dan tagihan piutang bakul.",
     siteName: "Buku Keuangan Usaha",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({
