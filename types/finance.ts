@@ -33,13 +33,18 @@ export type ItemMaster = {
   id: string;
   name: string;
   buyPrice: number;
-  sellPrice: number;
 };
 
 export type BakulMaster = {
   id: string;
   name: string;
-  address: string;
+  sellPrice?: number;
+};
+
+export type WeighingEntry = {
+  id: string;
+  label: string;
+  weight: string;
 };
 
 export type StockInRecord = {
@@ -47,6 +52,18 @@ export type StockInRecord = {
   date: string;
   itemName: string;
   quantity: number;
+  buyPrice: number;
+  birdCount?: number;
+  weighings?: WeighingEntry[];
+};
+
+export type PenyusutanRecord = {
+  id: string;
+  date: string;
+  itemName: string;
+  expectedStock: number;
+  actualStock: number;
+  amount: number;
 };
 
 export type StockOutRecord = {
@@ -58,6 +75,7 @@ export type StockOutRecord = {
   price: number;
   saleType?: "eceran" | "grosir";
   paymentMethod?: "cash" | "transfer" | "hutang";
+  weighings?: WeighingEntry[];
 };
 
 export type PiutangPayment = {
@@ -177,8 +195,10 @@ export type ProfitLossSummary = {
   totalOmzet: number;
   totalModal: number;
   totalProfit: number;
-  totalOperational: number;
+totalOperational: number;
   netProfit: number;
+  totalPenyusutan: number;
+  netProfitAfterPenyusutan: number;
   totalQuantity: number;
   saleBreakdown: SaleBreakdown;
   paymentBreakdown: PaymentBreakdown;

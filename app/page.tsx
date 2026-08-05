@@ -11,8 +11,9 @@ import {
   HandCoins,
   Package,
   PackagePlus,
-  ShoppingCart,
+ShoppingCart,
   Tag,
+  TrendingDown,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { Header } from "@/components/Header";
 import { MasterTab } from "@/components/MasterTab";
 import { MetricCard } from "@/components/MetricCard";
 import { OpsTab } from "@/components/OpsTab";
+import { PenyusutanTab } from "@/components/PenyusutanTab";
 import { StockInTab } from "@/components/StockInTab";
 import { StockOutTab } from "@/components/StockOutTab";
 import { rupiah, shortNumber, unique } from "@/lib/utils";
@@ -34,6 +36,7 @@ import {
   DailySale,
   ItemMaster,
   OperationalRecord,
+  PenyusutanRecord,
   Role,
   StockInRecord,
   StockOutRecord,
@@ -44,6 +47,7 @@ import {
   initialItems,
   initialOperationalRecords,
   initialOpsCategories,
+  initialPenyusutan,
   initialSales,
   initialStockIn,
   initialStockOut,
@@ -57,6 +61,7 @@ const BAKUL_MASTERS_KEY = "finance_book_rpa_bakul_masters_v1";
 const STOCK_IN_KEY = "finance_book_rpa_stock_in_v1";
 const STOCK_OUT_KEY = "finance_book_rpa_stock_out_v1";
 const OPS_CATEGORIES_KEY = "finance_book_rpa_ops_categories_v1";
+const PENYUSUTAN_KEY = "finance_book_rpa_penyusutan_v1";
 const ADMIN_PASSWORD = "jeko2026";
 
 function loadFromStorage<T>(key: string, fallback: T): T {
@@ -74,10 +79,21 @@ function subscribeToClient() {
 }
 
 export default function Home() {
-  const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
+const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
   const [menu, setMenu] = useState("dashboard");
   const [role, setRole] = useState<Role>("user");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const isAdmin = role === "admin";
+
+  // When switching to user mode, reset to a visible menu if currently on a locked one
+  useEffect(() => {
+    if (role === "user") {
+      const lockedKeys = new Set(menus.filter((m) => m.adminOnly).map((m) => m.key));
+      if (lockedKeys.has(menu)) {
+        setMenu("dashboard");
+      }
+    }
+  }, [role, menu]);
 
   const [sales, setSales] = useState<DailySale[]>(() =>
     loadFromStorage<DailySale[]>(SALES_KEY, initialSales as DailySale[])
@@ -100,8 +116,11 @@ export default function Home() {
 const [stockOut, setStockOut] = useState<StockOutRecord[]>(() =>
     loadFromStorage<StockOutRecord[]>(STOCK_OUT_KEY, initialStockOut as StockOutRecord[])
   );
-  const [opsCategories, setOpsCategories] = useState<string[]>(() =>
+const [opsCategories, setOpsCategories] = useState<string[]>(() =>
     loadFromStorage<string[]>(OPS_CATEGORIES_KEY, initialOpsCategories as string[])
+  );
+  const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(() =>
+    loadFromStorage<PenyusutanRecord[]>(PENYUSUTAN_KEY, initialPenyusutan as PenyusutanRecord[])
   );
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [reportDate, setReportDate] = useState<string>(() => {
@@ -148,10 +167,32 @@ const [stockOut, setStockOut] = useState<StockOutRecord[]>(() =>
     localStorage.setItem(STOCK_OUT_KEY, JSON.stringify(stockOut));
   }, [stockOut, isClient]);
 
-  useEffect(() => {
+useEffect(() => {
     if (!isClient) return;
     localStorage.setItem(OPS_CATEGORIES_KEY, JSON.stringify(opsCategories));
   }, [opsCategories, isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    localStorage.setItem(PENYUSUTAN_KEY, JSON.stringify(penyusutan));
+  }, [penyusutan, isClient]);
+
+const menus = [
+    { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
+{ key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: false },
+    { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
+{ key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
+    { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
+    { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
+    { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
+    { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
+  ];
+
+  // User only sees unlocked menus; admin sees all menus
+  const visibleMenus = useMemo(
+    () => menus.filter((menu) => role === "admin" || !menu.adminOnly),
+    [role]
+  );
 
   // Extract available months for dropdown
   const availableMonths = useMemo(() => {
@@ -176,8 +217,9 @@ const [stockOut, setStockOut] = useState<StockOutRecord[]>(() =>
     [stockOut, reportDate]
   );
 
-  const dailyQty = useMemo(() => dailyRecords.reduce((sum, r) => sum + r.quantity, 0), [dailyRecords]);
+const dailyQty = useMemo(() => dailyRecords.reduce((sum, r) => sum + r.quantity, 0), [dailyRecords]);
   const dailyOmzet = useMemo(() => dailyRecords.reduce((sum, r) => sum + r.quantity * r.price, 0), [dailyRecords]);
+  const totalPenyusutan = useMemo(() => penyusutan.reduce((sum, r) => sum + r.amount, 0), [penyusutan]);
 
 const dailyItemSummary = useMemo(() => {
     const map = new Map<string, { qty: number; omzet: number }>();
@@ -201,9 +243,9 @@ const dailyItemSummary = useMemo(() => {
     return stockInTotal - stockOutTotal;
   }, [stockIn, stockOut, reportDate]);
 
-  // === Harga Telur Hari Ini ===
-  // Sumber: Master Barang (sellPrice) + transaksi Barang Keluar pada tanggal terpilih
-  const eggPrices = useMemo(() => {
+// === Harga Ayam Hari Ini ===
+  // Sumber: Master Barang (buyPrice) + transaksi Barang Keluar pada tanggal terpilih
+const chickenPrices = useMemo(() => {
     const itemMap = new Map(items.map((item) => [item.name.toLowerCase(), item]));
 
     // Aggregasi harga jual riil dari transaksi Barang Keluar pada hari ini (rata-rata berbobot quantity)
@@ -229,7 +271,7 @@ const dailyItemSummary = useMemo(() => {
         const sellToday = todaySellPrice(name);
         return {
           name,
-          sellPrice: master?.sellPrice ?? null,
+          buyPrice: master?.buyPrice ?? null,
           sellToday,
         };
       })
@@ -326,15 +368,43 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     setStockIn((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const stockOutPiutangNote = (id: string) => `Auto dari Barang Keluar: ${id}`;
+
+  const stockOutToBakulRecord = (record: StockOutRecord): BakulRecord => {
+    const bill = record.quantity * record.price;
+    return {
+      date: record.date,
+      name: record.bakulName,
+      bill,
+      paid: 0,
+      balance: bill,
+      note: stockOutPiutangNote(record.id),
+    };
+  };
+
 // CRUD Transaksi Barang Keluar / Penjualan
   const handleAddStockOut = (record: StockOutRecord) => {
     setStockOut((prev) => [record, ...prev]);
+    setBakulRecords((prev) => [stockOutToBakulRecord(record), ...prev]);
   };
   const handleUpdateStockOut = (index: number, record: StockOutRecord) => {
+    const previousRecord = stockOut[index];
+    const previousNote = previousRecord ? stockOutPiutangNote(previousRecord.id) : stockOutPiutangNote(record.id);
+    const nextPiutang = stockOutToBakulRecord(record);
     setStockOut((prev) => prev.map((item, i) => (i === index ? record : item)));
+    setBakulRecords((prev) => {
+      const linkedIndex = prev.findIndex((item) => item.note === previousNote);
+      if (linkedIndex === -1) return [nextPiutang, ...prev];
+      return prev.map((item, i) => (i === linkedIndex ? nextPiutang : item));
+    });
   };
   const handleDeleteStockOut = (index: number) => {
+    const deletedRecord = stockOut[index];
+    const deletedNote = deletedRecord ? stockOutPiutangNote(deletedRecord.id) : "";
     setStockOut((prev) => prev.filter((_, i) => i !== index));
+    if (deletedNote) {
+      setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
+    }
   };
 
   // CRUD Biaya Operasional
@@ -358,8 +428,19 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
         : [...prev, trimmed]
     );
   };
-  const handleDeleteOpsCategory = (category: string) => {
+const handleDeleteOpsCategory = (category: string) => {
     setOpsCategories((prev) => prev.filter((c) => c !== category));
+  };
+
+  // CRUD Penyusutan
+  const handleAddPenyusutan = (record: PenyusutanRecord) => {
+    setPenyusutan((prev) => [record, ...prev]);
+  };
+  const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
+    setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
+  };
+  const handleDeletePenyusutan = (index: number) => {
+    setPenyusutan((prev) => prev.filter((_, i) => i !== index));
   };
 
 // JSON Import & Reset
@@ -369,9 +450,10 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     ops: OperationalRecord[];
     items?: ItemMaster[];
     bakulMasters?: BakulMaster[];
-    stockIn?: StockInRecord[];
+stockIn?: StockInRecord[];
     stockOut?: StockOutRecord[];
     opsCategories?: string[];
+    penyusutan?: PenyusutanRecord[];
   }) => {
     setSales(data.sales);
     setBakulRecords(data.bakulRecords);
@@ -381,6 +463,7 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     if (data.stockIn) setStockIn(data.stockIn);
     if (data.stockOut) setStockOut(data.stockOut);
     if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
+    if (data.penyusutan) setPenyusutan(data.penyusutan);
   };
 
   const handleResetData = () => {
@@ -389,9 +472,10 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     setOps(initialOperationalRecords as OperationalRecord[]);
     setItems(initialItems as ItemMaster[]);
     setBakulMasters(initialBakulMasters as BakulMaster[]);
-    setStockIn(initialStockIn as StockInRecord[]);
+setStockIn(initialStockIn as StockInRecord[]);
     setStockOut(initialStockOut as StockOutRecord[]);
     setOpsCategories(initialOpsCategories as string[]);
+    setPenyusutan(initialPenyusutan as PenyusutanRecord[]);
     localStorage.removeItem(SALES_KEY);
     localStorage.removeItem(BAKUL_KEY);
     localStorage.removeItem(OPS_KEY);
@@ -400,17 +484,8 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     localStorage.removeItem(STOCK_IN_KEY);
     localStorage.removeItem(STOCK_OUT_KEY);
     localStorage.removeItem(OPS_CATEGORIES_KEY);
+    localStorage.removeItem(PENYUSUTAN_KEY);
   };
-
-const menus = [
-    { key: "dashboard", label: "Laporan Harian", icon: ClipboardList },
-    { key: "stockin", label: "Barang Masuk", icon: PackagePlus },
-    { key: "stockout", label: "Barang Keluar", icon: Package },
-    { key: "ops", label: "Operasional", icon: HandCoins },
-    { key: "bakul", label: "Piutang Bakul", icon: Users },
-    { key: "laporan", label: "Laba & Rugi", icon: FileBarChart },
-    { key: "master", label: "Master & Cadangan", icon: Database },
-  ];
 
   if (!isClient) {
     return (
@@ -441,8 +516,8 @@ const menus = [
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
 {/* Navigation Tabs */}
         <div className="rounded-2xl bg-white/70 p-2 shadow-sm backdrop-blur-sm border border-[#191712]/5">
-          <nav className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
-            {menus.map(({ key, label, icon: Icon }) => {
+<nav className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+            {visibleMenus.map(({ key, label, icon: Icon }) => {
               const active = menu === key;
               return (
                 <button
@@ -495,97 +570,111 @@ const menus = [
 
 {/* Daily Summary Cards */}
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                  label={`Total Barang Keluar • ${reportDate}`}
-                  value={`${shortNumber(dailyQty)} kg`}
-                  tone="blue"
-                  icon={Package}
-                />
-                <MetricCard
-                  label={`Total Omzet / Penjualan`}
-                  value={rupiah(dailyOmzet)}
-                  tone="green"
-                  icon={CircleDollarSign}
-                />
+                {isAdmin && (
+                  <>
+                    <MetricCard
+                      label={`Total Barang Keluar • ${reportDate}`}
+                      value={`${shortNumber(dailyQty)} kg`}
+                      tone="blue"
+                      icon={Package}
+                    />
+                    <MetricCard
+                      label={`Total Omzet / Penjualan`}
+                      value={rupiah(dailyOmzet)}
+                      tone="green"
+                      icon={CircleDollarSign}
+                    />
+                  </>
+                )}
                 <MetricCard
                   label={`Sisa Stok • ${reportDate}`}
                   value={`${shortNumber(dailyStockRemaining)} kg`}
                   tone="yellow"
                   icon={Boxes}
                 />
-                <MetricCard
+<MetricCard
                   label="Jumlah Transaksi"
                   value={`${dailyRecords.length} Transaksi`}
                   tone="plain"
                   icon={ShoppingCart}
                 />
+                {isAdmin && totalPenyusutan > 0 && (
+                  <MetricCard
+                    label="Total Penyusutan"
+                    value={`${shortNumber(totalPenyusutan)} kg`}
+                    tone="red"
+                    icon={TrendingDown}
+                  />
+                )}
               </div>
 
-              {/* Harga Telur Hari Ini */}
-              <div className="overflow-hidden rounded-2xl border border-[#191712]/10 bg-white shadow-sm">
-                <div className="flex items-center justify-between gap-2 border-b border-[#191712]/10 bg-gradient-to-r from-[#d9ff67] to-[#b3e619] px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <Tag size={18} className="text-[#191712]" />
-                    <h3 className="text-base font-black text-[#191712]">Harga Telur Hari Ini</h3>
-                  </div>
-                  <span className="rounded-full bg-[#191712]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#191712]">
-                    {reportDate}
-                  </span>
-                </div>
-
-                <div className="p-5">
-                  {eggPrices.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-[#706858]">
-                      Belum ada data harga. Tambahkan barang di <strong>Master &amp; Cadangan</strong> atau catat
-                      transaksi Barang Keluar.
-                    </p>
-                  ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-{eggPrices.map((item) => {
-                        // Prioritas: Harga Master Barang (Rp 23.000), lalu rata-rata transaksi hari ini
-                        const displayPrice = item.sellPrice ?? item.sellToday;
-                        const hasPrice = displayPrice != null;
-                        return (
-                          <div
-                            key={item.name}
-                            className="relative overflow-hidden rounded-xl border border-[#191712]/10 bg-gradient-to-br from-[#f7f5ef] to-white p-4"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-black text-[#191712]">{item.name}</p>
-                                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-[#706858]">
-                                  {item.sellPrice != null ? "Harga master" : "Harga transaksi"}
-                                </p>
-                              </div>
-                              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#191712]/5 text-[#191712]">
-                                <TrendingUp size={16} />
-                              </span>
-                            </div>
-
-                            <div className="mt-3">
-                              <p className="text-[10px] font-bold uppercase tracking-wide text-[#706858]">
-                                Harga Jual / kg
-                              </p>
-                              <p
-                                className={`font-mono text-2xl font-black tracking-tight ${
-                                  hasPrice ? "text-[#1f8f5f]" : "text-[#b0a99a]"
-                                }`}
-                              >
-                                {hasPrice ? rupiah(displayPrice) : "—"}
-                              </p>
-                              {item.sellToday != null && item.sellPrice != null && item.sellToday !== item.sellPrice && (
-                                <p className="mt-1 text-[10px] font-bold text-[#706858]">
-                                  Rata-rata transaksi hari ini: {rupiah(item.sellToday)} / kg
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+{/* Harga Ayam Hari Ini (khusus Admin) */}
+              {isAdmin && (
+                <div className="overflow-hidden rounded-2xl border border-[#191712]/10 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#191712]/10 bg-gradient-to-r from-[#d9ff67] to-[#b3e619] px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <Tag size={18} className="text-[#191712]" />
+                      <h3 className="text-base font-black text-[#191712]">Harga Ayam Hari Ini</h3>
                     </div>
-                  )}
+                    <span className="rounded-full bg-[#191712]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#191712]">
+                      {reportDate}
+                    </span>
+                  </div>
+
+                  <div className="p-5">
+                    {chickenPrices.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-[#706858]">
+                        Belum ada data harga. Tambahkan barang di <strong>Master &amp; Cadangan</strong> atau catat
+                        transaksi Barang Keluar.
+                      </p>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {chickenPrices.map((item) => {
+                          // Prioritas: Harga Master Barang (Rp 23.000), lalu rata-rata transaksi hari ini
+                          const displayPrice = item.buyPrice ?? item.sellToday;
+                          const hasPrice = displayPrice != null;
+                          return (
+                            <div
+                              key={item.name}
+                              className="relative overflow-hidden rounded-xl border border-[#191712]/10 bg-gradient-to-br from-[#f7f5ef] to-white p-4"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-black text-[#191712]">{item.name}</p>
+                                  <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-[#706858]">
+                                    {item.buyPrice != null ? "Harga beli master" : "Harga transaksi"}
+                                  </p>
+                                </div>
+                                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#191712]/5 text-[#191712]">
+                                  <TrendingUp size={16} />
+                                </span>
+                              </div>
+
+                              <div className="mt-3">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-[#706858]">
+                                  Harga Beli / kg
+                                </p>
+                                <p
+                                  className={`font-mono text-2xl font-black tracking-tight ${
+                                    hasPrice ? "text-[#1f8f5f]" : "text-[#b0a99a]"
+                                  }`}
+                                >
+                                  {hasPrice ? rupiah(displayPrice) : "—"}
+                                </p>
+                                {item.sellToday != null && item.buyPrice != null && item.sellToday !== item.buyPrice && (
+                                  <p className="mt-1 text-[10px] font-bold text-[#706858]">
+                                    Rata-rata transaksi hari ini: {rupiah(item.sellToday)} / kg
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Per-item Summary */}
               {dailyItemSummary.length > 0 && (
@@ -657,17 +746,6 @@ const menus = [
                             >
                               {record.saleType ?? "eceran"}
                             </span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                                (record.paymentMethod ?? "cash") === "hutang"
-                                  ? "bg-[#ffe2d8] text-[#8f321a]"
-                                  : (record.paymentMethod ?? "cash") === "transfer"
-                                  ? "bg-[#e6f1ff] text-[#173a61]"
-                                  : "bg-[#f0eadb] text-[#191712]"
-                              }`}
-                            >
-                              {record.paymentMethod ?? "cash"}
-                            </span>
                           </div>
                           <p className="text-[#706858]">{record.bakulName} • Harga jual {rupiah(record.price)}</p>
                         </div>
@@ -699,11 +777,11 @@ const menus = [
               stockOut={stockOut}
               itemNames={itemNames}
               bakulNames={bakulNames}
-              items={items}
+              bakulMasters={bakulMasters}
+              role={role}
               onAddStockOut={handleAddStockOut}
               onUpdateStockOut={handleUpdateStockOut}
               onDeleteStockOut={handleDeleteStockOut}
-              onAddBakul={handleAddBakul}
             />
           )}
 
@@ -718,7 +796,7 @@ const menus = [
             />
           )}
 
-          {menu === "ops" && (
+{menu === "ops" && (
             <OpsTab
               ops={ops}
               categories={categories}
@@ -730,8 +808,27 @@ const menus = [
             />
           )}
 
-          {menu === "laporan" && (
-            <FinancialReportTab stockOut={stockOut} items={items} ops={ops} role={role} />
+          {menu === "penyusutan" && (
+            <PenyusutanTab
+              penyusutan={penyusutan}
+              stockIn={stockIn}
+              stockOut={stockOut}
+              itemNames={itemNames}
+              role={role}
+              onAddPenyusutan={handleAddPenyusutan}
+              onUpdatePenyusutan={handleUpdatePenyusutan}
+              onDeletePenyusutan={handleDeletePenyusutan}
+            />
+          )}
+
+{menu === "laporan" && (
+            <FinancialReportTab
+              stockOut={stockOut}
+              stockIn={stockIn}
+              ops={ops}
+              penyusutan={penyusutan}
+              role={role}
+            />
           )}
 
           {menu === "master" && (
@@ -741,10 +838,11 @@ const menus = [
               bakulRecords={bakulRecords}
               ops={ops}
               items={items}
-              bakulMasters={bakulMasters}
+bakulMasters={bakulMasters}
               stockIn={stockIn}
               stockOut={stockOut}
               opsCategories={opsCategories}
+              penyusutan={penyusutan}
               role={role}
               onAddItem={handleAddItem}
               onUpdateItem={handleUpdateItem}
@@ -763,4 +861,3 @@ const menus = [
     </main>
   );
 }
-

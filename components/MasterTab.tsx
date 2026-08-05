@@ -20,6 +20,7 @@ import {
   DailySale,
   ItemMaster,
   OperationalRecord,
+  PenyusutanRecord,
   Role,
   StockInRecord,
   StockOutRecord,
@@ -35,6 +36,7 @@ interface MasterTabProps {
   stockIn: StockInRecord[];
   stockOut: StockOutRecord[];
   opsCategories: string[];
+  penyusutan: PenyusutanRecord[];
   role: Role;
   onAddItem: (item: ItemMaster) => void;
   onUpdateItem: (index: number, item: ItemMaster) => void;
@@ -50,9 +52,10 @@ interface MasterTabProps {
     ops: OperationalRecord[];
     items?: ItemMaster[];
     bakulMasters?: BakulMaster[];
-    stockIn?: StockInRecord[];
+stockIn?: StockInRecord[];
     stockOut?: StockOutRecord[];
     opsCategories?: string[];
+    penyusutan?: PenyusutanRecord[];
   }) => void;
   onResetData: () => void;
 }
@@ -69,6 +72,7 @@ export function MasterTab({
   stockIn,
   stockOut,
   opsCategories,
+  penyusutan,
   role,
   onAddItem,
   onUpdateItem,
@@ -87,12 +91,12 @@ export function MasterTab({
   const isAdmin = role === "admin";
 
   // === Form State: Master Barang ===
-  const [itemForm, setItemForm] = useState({ name: "", buyPrice: "", sellPrice: "" });
+  const [itemForm, setItemForm] = useState({ name: "", buyPrice: "" });
   const [itemEditIndex, setItemEditIndex] = useState<number | null>(null);
   const [itemDeleteIndex, setItemDeleteIndex] = useState<number | null>(null);
 
   const resetItemForm = () => {
-    setItemForm({ name: "", buyPrice: "", sellPrice: "" });
+    setItemForm({ name: "", buyPrice: "" });
     setItemEditIndex(null);
   };
 
@@ -100,10 +104,9 @@ export function MasterTab({
     e.preventDefault();
     const name = itemForm.name.trim();
     const buyPrice = toNumber(itemForm.buyPrice);
-    const sellPrice = toNumber(itemForm.sellPrice);
-    if (!name || buyPrice <= 0 || sellPrice <= 0) return;
+    if (!name || buyPrice <= 0) return;
 
-    const record: ItemMaster = { id: uid(), name, buyPrice, sellPrice };
+    const record: ItemMaster = { id: uid(), name, buyPrice };
     if (itemEditIndex !== null) {
       onUpdateItem(itemEditIndex, record);
     } else {
@@ -114,25 +117,26 @@ export function MasterTab({
 
   const handleStartEditItem = (item: ItemMaster, index: number) => {
     setItemEditIndex(index);
-    setItemForm({ name: item.name, buyPrice: String(item.buyPrice), sellPrice: String(item.sellPrice) });
+    setItemForm({ name: item.name, buyPrice: String(item.buyPrice) });
   };
 
   // === Form State: Master Pelanggan / Bakul ===
-  const [bakulForm, setBakulForm] = useState({ name: "", address: "" });
+  const [bakulForm, setBakulForm] = useState({ name: "", sellPrice: "" });
   const [bakulEditIndex, setBakulEditIndex] = useState<number | null>(null);
   const [bakulDeleteIndex, setBakulDeleteIndex] = useState<number | null>(null);
 
   const resetBakulForm = () => {
-    setBakulForm({ name: "", address: "" });
+    setBakulForm({ name: "", sellPrice: "" });
     setBakulEditIndex(null);
   };
 
   const handleSubmitBakul = (e: React.FormEvent) => {
     e.preventDefault();
     const name = bakulForm.name.trim();
-    if (!name) return;
+    const sellPrice = toNumber(bakulForm.sellPrice);
+    if (!name || sellPrice <= 0) return;
 
-    const record: BakulMaster = { id: uid(), name, address: bakulForm.address.trim() };
+    const record: BakulMaster = { id: uid(), name, sellPrice };
     if (bakulEditIndex !== null) {
       onUpdateBakulMaster(bakulEditIndex, record);
     } else {
@@ -143,12 +147,12 @@ export function MasterTab({
 
   const handleStartEditBakul = (master: BakulMaster, index: number) => {
     setBakulEditIndex(index);
-    setBakulForm({ name: master.name, address: master.address });
+    setBakulForm({ name: master.name, sellPrice: String(master.sellPrice ?? "") });
   };
 
 // === Backup / Restore ===
   const handleExportJSON = () => {
-    exportToJSON(sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories);
+exportToJSON(sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,7 +172,8 @@ export function MasterTab({
             bakulMasters: Array.isArray(json.bakulMasters) ? json.bakulMasters : [],
             stockIn: Array.isArray(json.stockIn) ? json.stockIn : [],
             stockOut: Array.isArray(json.stockOut) ? json.stockOut : [],
-            opsCategories: Array.isArray(json.opsCategories) ? json.opsCategories : [],
+opsCategories: Array.isArray(json.opsCategories) ? json.opsCategories : [],
+            penyusutan: Array.isArray(json.penyusutan) ? json.penyusutan : [],
           });
           setImportError("");
           alert("Data berhasil di-import!");
@@ -190,8 +195,8 @@ export function MasterTab({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-black text-[#191712]">Master Barang & Harga</h2>
-            <p className="text-xs text-[#706858]">
-              Daftar nama barang beserta Harga Beli dan Harga Jual. Khusus Owner (Admin).
+<p className="text-xs text-[#706858]">
+              Daftar nama barang beserta Harga Beli. Khusus Owner (Admin).
             </p>
           </div>
           <Chip size="sm" className="bg-[#e6f1ff] font-bold text-[#173a61]">
@@ -206,44 +211,24 @@ export function MasterTab({
               <h3 className="font-black text-sm text-[#191712]">
                 {itemEditIndex === null ? "Tambah Barang Baru" : "Edit Barang"}
               </h3>
-              <Input
+<Input
                 label="Nama Barang"
                 labelPlacement="outside"
-                placeholder="cth. Telur Ayam"
+placeholder="cth. Ayam Broiler"
                 value={itemForm.name}
                 onValueChange={(name) => setItemForm((prev) => ({ ...prev, name }))}
                 radius="sm"
                 required
               />
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Harga Beli /kg (Rp)"
-                  labelPlacement="outside"
-                  placeholder="cth. 21000"
-                  value={itemForm.buyPrice}
-                  onValueChange={(buyPrice) => setItemForm((prev) => ({ ...prev, buyPrice }))}
-                  radius="sm"
-                  required
-                />
-                <Input
-                  label="Harga Jual /kg (Rp)"
-                  labelPlacement="outside"
-                  placeholder="cth. 23000"
-                  value={itemForm.sellPrice}
-                  onValueChange={(sellPrice) => setItemForm((prev) => ({ ...prev, sellPrice }))}
-                  radius="sm"
-                  required
-                />
-              </div>
-
-              {itemForm.name && toNumber(itemForm.buyPrice) > 0 && toNumber(itemForm.sellPrice) > 0 && (
-                <div className="rounded-lg bg-white border border-[#191712]/10 px-3 py-2 text-xs flex justify-between">
-                  <span className="font-bold text-[#706858]">Estimasi Laba</span>
-                  <span className="font-mono font-black text-[#1f8f5f]">
-                    {rupiah(toNumber(itemForm.sellPrice) - toNumber(itemForm.buyPrice))}
-                  </span>
-                </div>
-              )}
+              <Input
+                label="Harga Beli /kg (Rp)"
+                labelPlacement="outside"
+                placeholder="cth. 23000"
+                value={itemForm.buyPrice}
+                onValueChange={(buyPrice) => setItemForm((prev) => ({ ...prev, buyPrice }))}
+                radius="sm"
+                required
+              />
 
               <div className="flex gap-2">
                 <Button
@@ -270,9 +255,7 @@ export function MasterTab({
                   Belum ada barang terdaftar.
                 </div>
               ) : (
-                items.map((item, index) => {
-                  const margin = item.sellPrice - item.buyPrice;
-                  const marginPct = item.buyPrice > 0 ? Math.round((margin / item.buyPrice) * 100) : 0;
+items.map((item, index) => {
                   return (
                     <Card key={item.id} shadow="none" radius="sm" className="border border-[#191712]/10 bg-white">
                       <CardBody className="gap-2 p-4">
@@ -281,18 +264,11 @@ export function MasterTab({
                             <h3 className="font-black text-[#191712]">{item.name}</h3>
                             <p className="text-[10px] text-[#706858] uppercase font-bold">Master Barang</p>
                           </div>
-                          <Chip size="sm" className="bg-[#e6f1ff] font-bold text-[#173a61]">
-                            +{marginPct}%
-                          </Chip>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="grid grid-cols-1 gap-2 text-xs">
                           <div className="rounded-lg bg-[#f7f5ef] p-2">
                             <span className="text-[10px] text-[#706858] uppercase block">Harga Beli /kg</span>
-                            <span className="font-bold">{rupiah(item.buyPrice)}</span>
-                          </div>
-                          <div className="rounded-lg bg-[#f7f5ef] p-2">
-                            <span className="text-[10px] text-[#706858] uppercase block">Harga Jual /kg</span>
-                            <span className="font-bold text-[#1f8f5f]">{rupiah(item.sellPrice)}</span>
+                            <span className="font-bold text-[#1f8f5f]">{rupiah(item.buyPrice)}</span>
                           </div>
                         </div>
                         <div className="flex gap-2 pt-1 border-t border-[#191712]/5">
@@ -336,7 +312,7 @@ export function MasterTab({
           <div>
             <h2 className="text-xl font-black text-[#191712]">Master Pelanggan / Bakul</h2>
             <p className="text-xs text-[#706858]">
-              Daftar nama bakul dan alamat. Dapat diisi oleh User & Owner.
+              Daftar nama bakul dan harga jual. Dapat diisi oleh User & Owner.
             </p>
           </div>
           <Chip size="sm" className="bg-[#f0eadb] font-bold text-[#191712]">
@@ -360,13 +336,12 @@ export function MasterTab({
               required
             />
             <Input
-              label="Alamat"
+              label="Harga Jual /kg (Rp)"
               labelPlacement="outside"
-              placeholder="cth. Demak"
-              value={bakulForm.address}
-              onValueChange={(address) => setBakulForm((prev) => ({ ...prev, address }))}
+              placeholder="cth. 23.000"
+              value={bakulForm.sellPrice}
+              onValueChange={(sellPrice) => setBakulForm((prev) => ({ ...prev, sellPrice }))}
               radius="sm"
-              startContent={<MapPin size={14} className="text-[#706858]" />}
             />
 
             <div className="flex gap-2">
@@ -401,7 +376,7 @@ export function MasterTab({
                       <h3 className="font-black text-[#191712]">{master.name}</h3>
                       <p className="text-xs text-[#706858] flex items-center gap-1">
                         <MapPin size={12} />
-                        {master.address || "Alamat belum diisi"}
+                        Harga jual {rupiah(master.sellPrice ?? 0)} / kg
                       </p>
                     </div>
                     <div className="flex gap-1">
@@ -668,4 +643,3 @@ function NewOpsCategoryForm({ onAdd }: { onAdd: (category: string) => void }) {
     </form>
   );
 }
-

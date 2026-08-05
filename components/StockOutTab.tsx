@@ -11,23 +11,22 @@ import {
   ModalHeader,
   Select,
   SelectItem,
-  Tab,
-  Tabs,
+  Textarea,
 } from "@heroui/react";
-import { AlertCircle, Edit2, Plus, Search } from "lucide-react";
+import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { rupiah, shortNumber, toNumber } from "@/lib/utils";
-import { BakulRecord, ItemMaster, StockOutRecord } from "@/types/finance";
+import { BakulMaster, Role, StockOutRecord } from "@/types/finance";
 
 interface StockOutTabProps {
   stockOut: StockOutRecord[];
   itemNames: string[];
   bakulNames: string[];
-  items: ItemMaster[];
+  bakulMasters: BakulMaster[];
+  role: Role;
   onAddStockOut: (record: StockOutRecord) => void;
   onUpdateStockOut: (index: number, record: StockOutRecord) => void;
   onDeleteStockOut: (index: number) => void;
-  onAddBakul: (record: BakulRecord) => void;
 }
 
 const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
@@ -39,48 +38,61 @@ export function StockOutTab({
   stockOut,
   itemNames,
   bakulNames,
-  items,
+  bakulMasters,
+  role,
   onAddStockOut,
   onUpdateStockOut,
   onDeleteStockOut,
-  onAddBakul,
 }: StockOutTabProps) {
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  const isAdmin = role === "admin";
 
   const [form, setForm] = useState({
     date: DEFAULT_DATE,
     bakulName: bakulNames[0] || "",
-    itemName: itemNames[0] || "",
-    quantity: "",
-    saleType: "eceran" as "eceran" | "grosir",
-    paymentMethod: "cash" as "cash" | "transfer" | "hutang",
-    price: "",
   });
+  const [weighingsInput, setWeighingsInput] = useState("");
 
-  // Auto-calculate price from Master Barang
-  const selectedItemMaster = useMemo(
-    () => items.find((i) => i.name.toLowerCase() === form.itemName.toLowerCase()),
-    [items, form.itemName]
+  const selectedBakulMaster = useMemo(
+    () => bakulMasters.find((b) => b.name.toLowerCase() === form.bakulName.toLowerCase()),
+    [bakulMasters, form.bakulName]
   );
 
-  const autoPrice = selectedItemMaster?.sellPrice || 0;
-  const quantityNum = toNumber(form.quantity);
-  const priceNum = form.saleType === "grosir" ? toNumber(form.price) : autoPrice;
-  const totalAuto = priceNum * quantityNum;
+  const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
+  const activeItemName = itemNames[0] || "Ayam";
 
-const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
+  const parseWeighingValues = (raw: string): string[] =>
+    raw
+      .split(/[+\n]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+  const parsedWeighings = () =>
+    parseWeighingValues(weighingsInput)
+      .map((s, i) => ({ id: `W-${Date.now()}-${i}`, label: `Timbangan ${i + 1}`, weight: String(toNumber(s)) }))
+      .filter((w) => (toNumber(w.weight) || 0) > 0);
+
+  const weighingsTotal = parseWeighingValues(weighingsInput)
+    .map((s) => toNumber(s))
+    .reduce((sum, n) => sum + n, 0);
+
+  const weighingCount = parseWeighingValues(weighingsInput).length;
+  const totalAuto = autoPrice * weighingsTotal;
+
+  const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
     setEditingIndex(originalIndex);
     setForm({
       date: item.date,
       bakulName: item.bakulName,
-      itemName: item.itemName,
-      quantity: String(item.quantity),
-      saleType: item.saleType ?? "eceran",
-      paymentMethod: item.paymentMethod ?? "cash",
-      price: item.saleType === "grosir" ? String(item.price) : "",
     });
+    setWeighingsInput(
+      (item.weighings ?? [])
+        .filter((w) => (toNumber(String(w.weight)) || 0) > 0)
+        .map((w) => String(w.weight))
+        .join("+")
+    );
   };
 
   const handleCancelEdit = () => {
@@ -88,50 +100,32 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
     setForm({
       date: DEFAULT_DATE,
       bakulName: bakulNames[0] || "",
-      itemName: itemNames[0] || "",
-      quantity: "",
-      saleType: "eceran",
-      paymentMethod: "cash",
-      price: "",
     });
+    setWeighingsInput("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const bakulName = form.bakulName.trim();
-    const itemName = form.itemName.trim();
-    const quantity = quantityNum;
-    if (!bakulName || !itemName || !quantity) return;
-    if (form.saleType === "grosir" && !priceNum) return;
+    const itemName = editingIndex !== null ? stockOut[editingIndex].itemName : activeItemName;
+    const quantity = weighingsTotal;
+    if (!bakulName || !itemName || quantity <= 0 || autoPrice <= 0) return;
 
-    const isNew = editingIndex === null;
     const record: StockOutRecord = {
-      id: isNew ? nextId() : stockOut[editingIndex].id,
+      id: editingIndex !== null ? stockOut[editingIndex].id : nextId(),
       date: form.date,
       bakulName,
       itemName,
       quantity,
-      price: priceNum,
-      saleType: form.saleType,
-      paymentMethod: form.paymentMethod,
+      price: autoPrice,
+      saleType: "eceran",
+      weighings: parsedWeighings(),
     };
 
-    if (isNew) {
-      onAddStockOut(record);
-      // Jika pembayaran hutang, catat langsung ke Piutang Bakul
-      if (form.paymentMethod === "hutang") {
-        const total = priceNum * quantity;
-        onAddBakul({
-          date: form.date,
-          name: bakulName,
-          bill: total,
-          paid: 0,
-          balance: total,
-          note: `Penjualan ${itemName} ${quantity} kg (${rupiah(total)}) - Hutang`,
-        });
-      }
-    } else {
+    if (editingIndex !== null) {
       onUpdateStockOut(editingIndex, record);
+    } else {
+      onAddStockOut(record);
     }
 
     handleCancelEdit();
@@ -149,24 +143,66 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
       );
     });
 
-  // Calculate total stock out per item
   const stockOutTotals = stockOut.reduce((acc, item) => {
     const key = item.itemName.toLowerCase();
     acc[key] = (acc[key] || 0) + item.quantity;
     return acc;
   }, {} as Record<string, number>);
 
-  const saleTypeLabel = (type?: "eceran" | "grosir") => type ?? "eceran";
+  const handlePrintReceipt = (record: StockOutRecord) => {
+    const total = record.quantity * record.price;
+    const win = window.open("", "_blank", "width=320,height=640");
+    if (!win) return;
+    win.document.write(`
+      <html>
+        <head>
+          <title>Struk Penjualan</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { width: 280px; margin: 0 auto; padding: 12px; font-family: 'Courier New', monospace; color: #000; font-size: 12px; }
+            .center { text-align: center; }
+            .title { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
+            .sub { font-size: 10px; margin-bottom: 6px; }
+            .divider { border-top: 1px dashed #000; margin: 8px 0; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 3px; gap: 8px; }
+            .b { font-weight: bold; }
+            .total { font-size: 14px; font-weight: bold; margin-top: 4px; }
+            .footer { text-align: center; font-size: 10px; margin-top: 10px; }
+            @media print { body { width: 80mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div class="title">BUKU KEUANGAN AYAM</div>
+            <div class="sub">Data Penjualan Ayam</div>
+          </div>
+          <div class="divider"></div>
+          <div class="row"><span>No. Struk</span><span class="b">${record.id}</span></div>
+          <div class="row"><span>Tanggal</span><span>${record.date}</span></div>
+          <div class="row"><span>Bakul</span><span class="b">${record.bakulName}</span></div>
+          <div class="divider"></div>
+          <div class="row"><span>${record.itemName}</span></div>
+          <div class="row"><span>&nbsp;&nbsp;${shortNumber(record.quantity)} kg x ${rupiah(record.price)}</span><span>${rupiah(total)}</span></div>
+          <div class="divider"></div>
+          <div class="row total"><span>TOTAL</span><span>${rupiah(total)}</span></div>
+          <div class="divider"></div>
+          <div class="footer">Terima kasih</div>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
-      {/* Form Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="text-xl font-black text-[#191712]">
           {editingIndex === null ? "Input Barang Keluar / Penjualan" : "Edit Barang Keluar / Penjualan"}
         </h2>
         <p className="text-xs text-[#706858] mt-1 mb-4">
-          Catat penjualan barang ke pelanggan. Pilih Eceran (harga otomatis) atau Grosir (harga manual).
+          Catat penjualan barang ke bakul. Harga jual otomatis diambil dari Master Bakul.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -181,7 +217,7 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
           />
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Nama Bakul / Pelanggan</label>
+            <label className="text-xs font-semibold text-[#191712]">Nama Bakul</label>
             <Select
               aria-label="Pilih Nama Bakul"
               selectedKeys={form.bakulName ? [form.bakulName] : []}
@@ -198,122 +234,58 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
             </Select>
             {bakulNames.length === 0 && (
               <p className="text-[11px] text-amber-700 font-medium mt-1">
-                ⚠️ Belum ada data pelanggan. Buat di menu Master & Cadangan.
+                Belum ada data bakul. Buat di menu Master & Cadangan.
               </p>
             )}
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Nama Barang</label>
-            <Select
-              aria-label="Pilih Nama Barang"
-              selectedKeys={form.itemName ? [form.itemName] : []}
-              onSelectionChange={(keys) => {
-                const selected = String(Array.from(keys)[0] ?? form.itemName);
-                setForm((prev) => ({ ...prev, itemName: selected }));
-              }}
-              radius="sm"
-              isDisabled={itemNames.length === 0}
-            >
-              {itemNames.map((name) => (
-                <SelectItem key={name}>{name}</SelectItem>
-              ))}
-            </Select>
+          <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] px-3 py-2 text-xs">
+            <span className="font-bold text-[#706858]">Barang keluar:</span>{" "}
+            <span className="font-black text-[#191712]">
+              {editingIndex !== null ? stockOut[editingIndex].itemName : activeItemName}
+            </span>
             {itemNames.length === 0 && (
-              <p className="text-[11px] text-amber-700 font-medium mt-1">
-                ⚠️ Belum ada data barang. Buat di menu Master & Cadangan.
+              <p className="mt-1 text-[11px] font-medium text-amber-700">
+                Belum ada master barang. Transaksi akan dicatat sebagai Ayam.
               </p>
             )}
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Stok Keluar (kg)</label>
-            <Input
+          <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Scale size={14} className="text-[#706858]" />
+              <span className="text-xs font-bold text-[#191712]">Data Timbangan Keluar (kg)</span>
+            </div>
+            <Textarea
+              minRows={4}
+              maxRows={14}
               labelPlacement="outside"
-              placeholder="cth. 1.5"
-              value={form.quantity}
-              onValueChange={(quantity) => setForm((prev) => ({ ...prev, quantity }))}
+              placeholder="cth: 40+41+42+40.7"
+              value={weighingsInput}
+              onValueChange={setWeighingsInput}
               radius="sm"
               required
-              endContent={<span className="text-xs font-bold text-[#706858]">kg</span>}
+              className="font-mono"
             />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Jenis Penjualan</label>
-            <Tabs
-              aria-label="Jenis Penjualan"
-              selectedKey={form.saleType}
-              onSelectionChange={(key) =>
-                setForm((prev) => ({ ...prev, saleType: String(key) as "eceran" | "grosir", price: "" }))
-              }
-              radius="sm"
-              variant="bordered"
-              classNames={{
-                tabList: "w-full",
-                tab: "flex-1",
-              }}
-            >
-<Tab key="eceran" title="Eceran" />
-              <Tab key="grosir" title="Grosir" />
-            </Tabs>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Metode Pembayaran</label>
-            <Tabs
-              aria-label="Metode Pembayaran"
-              selectedKey={form.paymentMethod}
-              onSelectionChange={(key) =>
-                setForm((prev) => ({ ...prev, paymentMethod: String(key) as "cash" | "transfer" | "hutang" }))
-              }
-              radius="sm"
-              variant="bordered"
-              classNames={{
-                tabList: "w-full",
-                tab: "flex-1",
-              }}
-            >
-              <Tab key="cash" title="Cash" />
-              <Tab key="transfer" title="Transfer" />
-              <Tab key="hutang" title="Hutang" />
-            </Tabs>
-            {form.paymentMethod === "hutang" && (
-              <p className="text-[11px] text-amber-700 font-medium mt-1">
-                ⚠️ Penjualan hutang akan otomatis dicatat ke menu <strong>Piutang Bakul</strong>.
-              </p>
+            <p className="text-[11px] text-[#706858]">
+              Masukkan banyak angka berat ayam dipisah tanda <strong>+</strong> atau satu angka per baris.
+            </p>
+            {weighingsTotal > 0 && (
+              <div className="flex items-center justify-between rounded-lg bg-[#d9ff67]/40 border border-[#191712]/10 px-3 py-2">
+                <span className="text-[11px] font-bold text-[#191712] uppercase">
+                  Total dari {weighingCount} timbangan
+                </span>
+                <span className="font-mono font-black text-[#1f8f5f]">{shortNumber(weighingsTotal)} kg</span>
+              </div>
             )}
           </div>
 
-          {form.saleType === "grosir" ? (
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#191712]">Harga Grosir (Rp/kg)</label>
-              <Input
-                labelPlacement="outside"
-                placeholder="cth. 27000"
-                value={form.price}
-                onValueChange={(price) => setForm((prev) => ({ ...prev, price }))}
-                radius="sm"
-                required
-                startContent={<span className="text-xs font-bold text-[#706858]">Rp</span>}
-              />
-            </div>
-          ) : (
-            <div className="rounded-xl bg-[#f7f5ef] p-3 border border-[#191712]/5 text-xs">
-              <span className="font-bold text-[#706858]">Harga Eceran / kg (Otomatis dari Master Barang)</span>
-              <div className="mt-1 font-mono font-black text-[#191712]">{rupiah(autoPrice)}</div>
-            </div>
-          )}
-
-          {/* Auto Price Preview */}
           <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5 space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="font-bold text-[#706858]">
-                Harga Jual / kg ({form.saleType === "grosir" ? "Manual" : "Otomatis"})
-              </span>
-              <span className="font-mono font-black text-[#191712]">{rupiah(priceNum)}</span>
+            <div className="flex justify-between gap-3 text-xs">
+              <span className="font-bold text-[#706858]">Harga Jual / kg (dari Master Bakul)</span>
+              <span className="font-mono font-black text-[#191712]">{rupiah(autoPrice)}</span>
             </div>
-            <div className="flex justify-between text-xs">
+            <div className="flex justify-between gap-3 text-xs">
               <span className="font-bold text-[#706858]">Total Penjualan</span>
               <span className="font-mono font-black text-[#1f8f5f]">{rupiah(totalAuto)}</span>
             </div>
@@ -337,7 +309,6 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
         </form>
       </div>
 
-      {/* Data List Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-black text-[#191712]">Riwayat Barang Keluar</h2>
@@ -355,7 +326,6 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
           </div>
         </div>
 
-        {/* Stock Out Totals Summary */}
         <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
           <h3 className="text-xs font-bold text-[#706858] uppercase mb-2">Total Barang Keluar</h3>
           <div className="flex flex-wrap gap-2">
@@ -390,40 +360,32 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
                   <div>
                     <h3 className="font-black text-[#191712]">{item.itemName}</h3>
                     <p className="text-xs text-[#706858] font-medium">
-                      {item.date} • {item.bakulName}
+                      {item.date} - {item.bakulName}
                     </p>
-<div className="mt-1 flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                          saleTypeLabel(item.saleType) === "grosir"
-                            ? "bg-[#fff3cd] text-[#8f6b00]"
-                            : "bg-[#e7f5ec] text-[#1f8f5f]"
-                        }`}
-                      >
-                        {saleTypeLabel(item.saleType)}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                          (item.paymentMethod ?? "cash") === "hutang"
-                            ? "bg-[#ffe2d8] text-[#8f321a]"
-                            : (item.paymentMethod ?? "cash") === "transfer"
-                            ? "bg-[#e6f1ff] text-[#173a61]"
-                            : "bg-[#f0eadb] text-[#191712]"
-                        }`}
-                      >
-                        {item.paymentMethod ?? "cash"}
-                      </span>
-                      <span className="text-[10px] text-[#706858] font-medium">
+                    {isAdmin && (
+                      <p className="mt-1 text-[10px] text-[#706858] font-medium">
                         Harga jual: {rupiah(item.price)} / kg
-                      </span>
-                    </div>
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 justify-between sm:justify-end">
                     <div className="text-right">
                       <span className="font-mono font-black text-[#e05234]">-{shortNumber(item.quantity)} kg</span>
-                      <p className="text-[10px] text-[#706858] font-mono font-bold">{rupiah(item.price * item.quantity)}</p>
+                      <p className="text-[10px] text-[#706858] font-mono font-bold">
+                        {rupiah(item.price * item.quantity)}
+                      </p>
                     </div>
                     <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="bg-[#e6f1ff] font-bold text-[#173a61] min-w-unit-12"
+                        startContent={<Printer size={14} />}
+                        onPress={() => handlePrintReceipt(item)}
+                        radius="sm"
+                      >
+                        Struk
+                      </Button>
                       <Button
                         size="sm"
                         variant="flat"
@@ -451,7 +413,6 @@ const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
       <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">
         <ModalContent>
           <ModalHeader className="flex items-center gap-2 text-rose-700">

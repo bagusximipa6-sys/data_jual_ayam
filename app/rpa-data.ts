@@ -4,6 +4,7 @@
   DailySale,
   ItemMaster,
   OperationalRecord,
+  PenyusutanRecord,
   PiutangPayment,
   StockInRecord,
   StockOutRecord,
@@ -26,3 +27,5 @@ export const initialStockIn: StockInRecord[] = [];
 export const initialStockOut: StockOutRecord[] = [];
 
 export const initialPiutangPayments: PiutangPayment[] = [];
+
+export const initialPenyusutan: PenyusutanRecord[] = [];

@@ -8,21 +8,23 @@ import autoTable from "jspdf-autotable";
 import { getMonthLabel, rupiah, shortNumber } from "@/lib/utils";
 import {
   emptyPaymentBreakdown,
-  ItemMaster,
   OperationalRecord,
   PaymentBreakdown,
   PaymentMethod,
+  PenyusutanRecord,
   ProfitLossSummary,
   Role,
   SaleBreakdown,
   SaleType,
+  StockInRecord,
   StockOutRecord,
 } from "@/types/finance";
 
 interface FinancialReportTabProps {
   stockOut: StockOutRecord[];
-  items: ItemMaster[];
+  stockIn: StockInRecord[];
   ops: OperationalRecord[];
+  penyusutan?: PenyusutanRecord[];
   role: Role;
 }
 
@@ -99,13 +101,16 @@ const mergePaymentBreakdown = (target: PaymentBreakdown, source: PaymentBreakdow
 
 const buildProfitLoss = (
   stockOut: StockOutRecord[],
-  items: ItemMaster[],
-  ops: OperationalRecord[]
+  stockIn: StockInRecord[],
+  ops: OperationalRecord[],
+  penyusutan: PenyusutanRecord[] = []
 ): ProfitLossSummary => {
-  // Map item name -> buyPrice from Master Barang
+  const totalPenyusutan = penyusutan.reduce((sum, r) => sum + r.amount, 0);
+  // Map item name -> buyPrice from latest Barang Masuk (stock in) record
   const buyPriceMap = new Map<string, number>();
-  for (const item of items) {
-    buyPriceMap.set(item.name.toLowerCase(), item.buyPrice);
+  const sortedStockIn = [...stockIn].sort((a, b) => a.date.localeCompare(b.date));
+  for (const record of sortedStockIn) {
+    buyPriceMap.set(record.itemName.toLowerCase(), record.buyPrice);
   }
 
   // Map operational expenses by date
@@ -270,9 +275,13 @@ const existingWeek = weeklyMap.get(weekKey);
     monthly,
     totalOmzet: daily.reduce((sum, d) => sum + d.totalOmzet, 0),
     totalModal: daily.reduce((sum, d) => sum + d.totalModal, 0),
-    totalProfit: daily.reduce((sum, d) => sum + d.totalProfit, 0),
+totalProfit: daily.reduce((sum, d) => sum + d.totalProfit, 0),
     totalOperational: daily.reduce((sum, d) => sum + d.totalOperational, 0),
     netProfit: daily.reduce((sum, d) => sum + d.netProfit, 0),
+    netProfitAfterPenyusutan: totalPenyusutan
+      ? daily.reduce((sum, d) => sum + d.netProfit, 0) - totalPenyusutan
+      : daily.reduce((sum, d) => sum + d.netProfit, 0),
+    totalPenyusutan,
     totalQuantity: daily.reduce((sum, d) => sum + d.totalQuantity, 0),
     saleBreakdown: totalBreakdown,
     paymentBreakdown: totalPaymentBreakdown,
@@ -336,7 +345,7 @@ const exportProfitPDF = (summary: ProfitLossSummary) => {
   doc.text("Laporan Keuangan & Laba Rugi", 14, 16);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text("Buku Keuangan Usaha - Data Jual Telur", 14, 22);
+doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   doc.text(`Dicetak: ${new Date().toLocaleString("id-ID")}`, 14, 27);
   doc.setDrawColor(180);
   doc.line(14, 30, 196, 30);
@@ -437,13 +446,13 @@ const exportProfitPDF = (summary: ProfitLossSummary) => {
   doc.save("laporan_laba_rugi.pdf");
 };
 
-export function FinancialReportTab({ stockOut, items, ops, role }: FinancialReportTabProps) {
+export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], role }: FinancialReportTabProps) {
   const [dateFilter, setDateFilter] = useState("");
   const isAdmin = role === "admin";
 
   const summary = useMemo(
-    () => buildProfitLoss(stockOut, items, ops),
-    [stockOut, items, ops]
+    () => buildProfitLoss(stockOut, stockIn, ops, penyusutan),
+    [stockOut, stockIn, ops, penyusutan]
   );
 
   const filteredDaily = useMemo(() => {
@@ -516,7 +525,7 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
 
 {/* Detail: Operasional & Grosir/Eceran */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
+<SummaryCard
               label="Biaya Operasional"
               value={rupiah(summary.totalOperational)}
               tone="red"
@@ -527,33 +536,28 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
               tone={summary.netProfit >= 0 ? "green" : "red"}
             />
             <SummaryCard
-              label="Penjualan Eceran"
-              value={`${shortNumber(summary.saleBreakdown.eceranQty)} kg • ${rupiah(summary.saleBreakdown.eceranOmzet)}`}
-              tone="blue"
+              label="Total Penyusutan"
+              value={rupiah(summary.totalPenyusutan)}
+              tone="yellow"
             />
             <SummaryCard
-              label="Penjualan Grosir"
-              value={`${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`}
-              tone="purple"
+              label="Laba Bersih (Setelah Penyusutan)"
+              value={rupiah(summary.netProfitAfterPenyusutan)}
+              tone={summary.netProfitAfterPenyusutan >= 0 ? "green" : "red"}
             />
           </div>
 
           {/* Payment Method Breakdown */}
           <div className="grid gap-4 md:grid-cols-3">
             <SummaryCard
-              label="Pembayaran Cash"
-              value={`${shortNumber(summary.paymentBreakdown.cashQty)} kg • ${rupiah(summary.paymentBreakdown.cashOmzet)}`}
-              tone="green"
-            />
-            <SummaryCard
-              label="Pembayaran Transfer"
-              value={`${shortNumber(summary.paymentBreakdown.transferQty)} kg • ${rupiah(summary.paymentBreakdown.transferOmzet)}`}
+              label="Penjualan Eceran"
+              value={`${shortNumber(summary.saleBreakdown.eceranQty)} kg • ${rupiah(summary.saleBreakdown.eceranOmzet)}`}
               tone="blue"
             />
-            <SummaryCard
-              label="Pembayaran Hutang"
-              value={`${shortNumber(summary.paymentBreakdown.hutangQty)} kg • ${rupiah(summary.paymentBreakdown.hutangOmzet)}`}
-              tone="red"
+<SummaryCard
+              label="Penjualan Grosir"
+              value={`${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`}
+              tone="purple"
             />
           </div>
 
@@ -724,17 +728,6 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
                               >
                                 {item.saleType}
                               </span>
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                                  (item.paymentMethod ?? "cash") === "hutang"
-                                    ? "bg-[#ffe2d8] text-[#8f321a]"
-                                    : (item.paymentMethod ?? "cash") === "transfer"
-                                    ? "bg-[#e6f1ff] text-[#173a61]"
-                                    : "bg-[#f0eadb] text-[#191712]"
-                                }`}
-                              >
-                                {item.paymentMethod ?? "cash"}
-                              </span>
                               <span className="text-[#706858]"> • {item.bakulName}</span>
                             </div>
                             <div className="text-right font-mono">
@@ -762,8 +755,9 @@ export function FinancialReportTab({ stockOut, items, ops, role }: FinancialRepo
       <div className="flex items-start gap-2 rounded-2xl border border-[#191712]/10 bg-white p-4 text-xs text-[#706858]">
         <Download size={15} className="mt-0.5 shrink-0" />
         <p>
-          <strong>Rumus:</strong> Pendapatan Harian = (Total Stok Keluar × Harga Jual) − (Total Stok Keluar × Harga
-          Beli). Harga Beli diambil dari Master Barang; jika barang belum terdaftar di Master Barang, modal dihitung Rp0.
+<strong>Rumus:</strong> Pendapatan Harian = (Total Stok Keluar × Harga Jual) − (Total Stok Keluar × Harga
+          Beli). Harga Beli diambil dari transaksi Barang Masuk terakhir untuk barang tersebut; jika belum ada data
+          Barang Masuk, modal dihitung Rp0.
         </p>
       </div>
     </div>

@@ -3,11 +3,11 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Buku Keuangan Usaha | Data Jual Telur",
-  description: "Aplikasi pencatatan keuangan usaha perdagangan telur, rekap penjualan, operasional, dan tagihan piutang bakul.",
+title: "Buku Keuangan Usaha | Data Jual Ayam",
+  description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
   openGraph: {
-    title: "Buku Keuangan Usaha | Data Jual Telur",
-    description: "Aplikasi pencatatan keuangan usaha perdagangan telur, rekap penjualan, operasional, dan tagihan piutang bakul.",
+    title: "Buku Keuangan Usaha | Data Jual Ayam",
+    description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
     siteName: "Buku Keuangan Usaha",
   },
 };

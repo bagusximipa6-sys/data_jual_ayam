@@ -11,11 +11,12 @@ import {
   ModalHeader,
   Select,
   SelectItem,
+  Textarea,
 } from "@heroui/react";
-import { AlertCircle, Edit2, Lock, Plus, Search } from "lucide-react";
+import { AlertCircle, Edit2, Lock, Plus, Search, Scale, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { shortNumber, toNumber } from "@/lib/utils";
-import { Role, StockInRecord } from "@/types/finance";
+import { Role, StockInRecord, WeighingEntry } from "@/types/finance";
 
 interface StockInTabProps {
   stockIn: StockInRecord[];
@@ -43,21 +44,73 @@ export function StockInTab({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
 
-  const [form, setForm] = useState({
+const [form, setForm] = useState({
     date: DEFAULT_DATE,
     itemName: itemNames[0] || "",
     quantity: "",
+    birdCount: "",
   });
+  const [weighingsInput, setWeighingsInput] = useState("");
 
-  const isAdmin = role === "admin";
+const isAdmin = role === "admin";
 
-  const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
+  // Stok ditutup setiap jam 3 sore (15:00). Setelah 15:00, stok untuk hari ini dikunci
+  // dan dibuka kembali untuk hari berikutnya (reset mulai dari nol).
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const isStockClosed = currentMinutes >= 15 * 60; // 15:00 = 900 menit
+
+  const todayStr = now.toISOString().slice(0, 10);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  // Tanggal stok aktif: hari ini sebelum 15:00, besok setelah 15:00.
+  const activeStockDate = isStockClosed ? tomorrowStr : todayStr;
+
+  // "Ringkasan Stok" menampilkan stok aktif untuk periode input berjalan
+  // (reset otomatis setiap periode baru — mulai dari nol).
+  const activeStock = stockIn.filter((r) => r.date === activeStockDate);
+  const activeStockBalances = activeStock.reduce((acc, item) => {
+    const key = item.itemName.toLowerCase();
+    acc[key] = (acc[key] || 0) + item.quantity;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Parse Data Timbangan expression ("40+41+42+40.7") into individual weights.
+  // Also supports newline-separated values (one per line) by treating line breaks as "+".
+  const parseWeighingValues = (raw: string): string[] =>
+    raw
+      .split("+")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+  const parsedWeighings = () =>
+    parseWeighingValues(weighingsInput)
+      .map((s, i) => ({ id: `W-${Date.now()}-${i}`, label: `Timbangan ${i + 1}`, weight: String(toNumber(s)) }))
+      .filter((w) => (toNumber(w.weight) || 0) > 0);
+
+  // Sum of all weighing weights -> auto-fill quantity
+  const weighingsTotal = parseWeighingValues(weighingsInput)
+    .map((s) => toNumber(s))
+    .reduce((sum, n) => sum + n, 0);
+
+  const weighingCount = parseWeighingValues(weighingsInput).length;
+
+const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     setEditingIndex(originalIndex);
     setForm({
       date: item.date,
       itemName: item.itemName,
       quantity: String(item.quantity),
+      birdCount: item.birdCount != null ? String(item.birdCount) : "",
     });
+    setWeighingsInput(
+      (item.weighings ?? [])
+        .filter((w) => (toNumber(String(w.weight)) || 0) > 0)
+        .map((w) => String(w.weight))
+        .join("+")
+    );
   };
 
   const handleCancelEdit = () => {
@@ -66,13 +119,15 @@ export function StockInTab({
       date: DEFAULT_DATE,
       itemName: itemNames[0] || "",
       quantity: "",
+      birdCount: "",
     });
+    setWeighingsInput("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const itemName = form.itemName.trim();
-    const quantity = toNumber(form.quantity);
+    const quantity = weighingsTotal;
     if (!itemName || !quantity) return;
 
     const record: StockInRecord = {
@@ -80,6 +135,9 @@ export function StockInTab({
       date: form.date,
       itemName,
       quantity,
+      buyPrice: 0,
+      birdCount: form.birdCount ? toNumber(form.birdCount) : undefined,
+      weighings: parsedWeighings(),
     };
 
     if (editingIndex !== null) {
@@ -116,12 +174,24 @@ export function StockInTab({
         <h2 className="text-xl font-black text-[#191712]">
           {editingIndex === null ? "Input Barang Masuk" : "Edit Barang Masuk"}
         </h2>
-        <p className="text-xs text-[#706858] mt-1 mb-4">
+<p className="text-xs text-[#706858] mt-1 mb-4">
           Catat penerimaan stok barang yang masuk ke gudang / toko.
         </p>
 
-        {isAdmin ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
+{/* Status stok: tutup jam 3 sore, lalu otomatis pindah ke hari berikutnya */}
+        <div
+          className={`mb-4 rounded-xl border px-3 py-2 text-xs font-bold ${
+            isStockClosed
+              ? "border-[#fff3cd] bg-[#fff3cd]/50 text-[#8f6b00]"
+              : "border-[#d9ff67] bg-[#d9ff67]/40 text-[#191712]"
+          }`}
+        >
+          {isStockClosed
+            ? `🔒 Stok hari ${todayStr} sudah ditutup (setelah pukul 15.00). Input stok sekarang untuk tanggal ${activeStockDate} (reset dari nol).`
+            : `🕒 Stok aktif hari ini (${todayStr}). Stok akan ditutup otomatis pukul 15.00 dan pindah ke hari berikutnya.`}
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               type="date"
               label="Tanggal Masuk"
@@ -133,9 +203,9 @@ export function StockInTab({
             />
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#191712]">Nama Barang</label>
+              <label className="text-xs font-semibold text-[#191712]">Nama Kandang</label>
               <Select
-                aria-label="Pilih Nama Barang"
+                aria-label="Pilih Nama Kandang"
                 selectedKeys={form.itemName ? [form.itemName] : []}
                 onSelectionChange={(keys) => {
                   const selected = String(Array.from(keys)[0] ?? form.itemName);
@@ -155,20 +225,50 @@ export function StockInTab({
               )}
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#191712]">Stok Masuk (kg)</label>
-              <Input
+            {/* Data Timbangan */}
+            <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Scale size={14} className="text-[#706858]" />
+                <span className="text-xs font-bold text-[#191712]">Data Timbangan (kg)</span>
+              </div>
+              <Textarea
+                minRows={4}
+                maxRows={14}
                 labelPlacement="outside"
-                placeholder="cth. 1.5"
-                value={form.quantity}
-                onValueChange={(quantity) => setForm((prev) => ({ ...prev, quantity }))}
+                placeholder="cth: 40+41+42+40.7"
+                value={weighingsInput}
+                onValueChange={setWeighingsInput}
                 radius="sm"
                 required
-                endContent={<span className="text-xs font-bold text-[#706858]">kg</span>}
+                className="font-mono"
+              />
+              <p className="text-[11px] text-[#706858]">
+                Masukkan banyak angka berat ayam dipisah tanda <strong>+</strong> (atau satu angka per baris).
+                Total dihitung otomatis.
+              </p>
+              {weighingsTotal > 0 && (
+                <div className="flex items-center justify-between rounded-lg bg-[#d9ff67]/40 border border-[#191712]/10 px-3 py-2">
+                  <span className="text-[11px] font-bold text-[#191712] uppercase">
+                    Total dari {weighingCount} timbangan
+                  </span>
+                  <span className="font-mono font-black text-[#1f8f5f]">{shortNumber(weighingsTotal)} kg</span>
+                </div>
+              )}
+            </div>
+
+<div className="space-y-1">
+              <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
+              <Input
+                labelPlacement="outside"
+                placeholder="Opsional, cth. 50"
+                value={form.birdCount}
+                onValueChange={(birdCount) => setForm((prev) => ({ ...prev, birdCount }))}
+                radius="sm"
+                endContent={<span className="text-xs font-bold text-[#706858]">ekor</span>}
               />
             </div>
 
-            <div className="flex gap-2 pt-2">
+<div className="flex gap-2 pt-2">
               <Button
                 type="submit"
                 className="flex-1 bg-[#191712] font-bold text-white shadow-sm"
@@ -184,104 +284,102 @@ export function StockInTab({
               )}
             </div>
           </form>
-        ) : (
-          <div className="rounded-xl border border-dashed border-[#191712]/20 bg-[#f7f5ef] p-6 text-center">
-            <Lock size={20} className="mx-auto mb-2 text-[#706858]" />
-            <p className="text-sm font-bold text-[#191712]">Input stok dikunci</p>
-            <p className="text-xs text-[#706858] mt-1">
-              Hanya admin yang dapat menambah, mengubah, atau menghapus data stok masuk.
-            </p>
-          </div>
-        )}
       </div>
 
-{/* Data List Panel */}
-      {isAdmin && (
-        <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-xl font-black text-[#191712]">Riwayat Barang Masuk</h2>
-            <div className="w-full sm:w-64">
-              <Input
-                size="sm"
-                placeholder="Cari barang/tanggal..."
-                value={search}
-                onValueChange={setSearch}
-                startContent={<Search size={14} className="text-[#706858]" />}
-                radius="sm"
-                isClearable
-                onClear={() => setSearch("")}
-              />
-            </div>
+      {/* Data List Panel — visible to all users */}
+      <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-xl font-black text-[#191712]">Riwayat Barang Masuk</h2>
+          <div className="w-full sm:w-64">
+            <Input
+              size="sm"
+              placeholder="Cari barang/tanggal..."
+              value={search}
+              onValueChange={setSearch}
+              startContent={<Search size={14} className="text-[#706858]" />}
+              radius="sm"
+              isClearable
+              onClear={() => setSearch("")}
+            />
           </div>
+        </div>
 
-          {/* Stock Balance Summary */}
-          <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
-            <h3 className="text-xs font-bold text-[#706858] uppercase mb-2">Ringkasan Stok</h3>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(stockBalances).map(([key, qty]) => (
-                <span
-                  key={key}
-                  className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold border border-[#191712]/10"
-                >
-                  {key.charAt(0).toUpperCase() + key.slice(1)}: {shortNumber(qty)} kg
-                </span>
-              ))}
-              {Object.keys(stockBalances).length === 0 && (
-                <span className="text-xs text-[#706858]">Belum ada stok tercatat.</span>
-              )}
-            </div>
+{/* Stock Balance Summary (hanya stok aktif — reset otomatis tiap periode baru) */}
+        <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-[#706858] uppercase">Ringkasan Stok Aktif</h3>
+            <span className="text-[10px] font-bold text-[#706858]">{activeStockDate}</span>
           </div>
-
-          <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
-            {filteredRecords.length === 0 ? (
-              <div className="py-12 text-center text-sm text-[#706858]">
-                Tidak ditemukan catatan barang masuk.
-              </div>
-            ) : (
-              filteredRecords.map(({ item, originalIndex }) => (
-                <Card
-                  key={item.id}
-                  shadow="none"
-                  radius="sm"
-                  className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
-                >
-                  <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="font-black text-[#191712]">{item.itemName}</h3>
-                      <p className="text-xs text-[#706858] font-medium">{item.date}</p>
-                    </div>
-                    <div className="flex items-center gap-4 justify-between sm:justify-end">
-                      <span className="font-mono font-black text-[#1f8f5f]">+{shortNumber(item.quantity)} kg</span>
-                      {isAdmin && (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            className="font-bold min-w-unit-12"
-                            onPress={() => handleStartEdit(item, originalIndex)}
-                            radius="sm"
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
-                            onPress={() => setDeleteConfirmIndex(originalIndex)}
-                            radius="sm"
-                          >
-                            Hapus
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardBody>
-                </Card>
-              ))
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(activeStockBalances).map(([key, qty]) => (
+              <span
+                key={key}
+                className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold border border-[#191712]/10"
+              >
+                {key.charAt(0).toUpperCase() + key.slice(1)}: {shortNumber(qty)} kg
+              </span>
+            ))}
+            {Object.keys(activeStockBalances).length === 0 && (
+              <span className="text-xs text-[#706858]">Belum ada stok tercatat untuk {activeStockDate}.</span>
             )}
           </div>
         </div>
-      )}
+
+        <div className="space-y-3">
+          {filteredRecords.length === 0 ? (
+            <div className="py-12 text-center text-sm text-[#706858]">
+              Tidak ditemukan catatan barang masuk.
+            </div>
+          ) : (
+            filteredRecords.map(({ item, originalIndex }) => (
+              <Card
+                key={item.id}
+                shadow="none"
+                radius="sm"
+                className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
+              >
+                <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-black text-[#191712]">{item.itemName}</h3>
+<p className="text-xs text-[#706858] font-medium">
+                      {item.date}
+                      {item.birdCount != null && item.birdCount > 0 && ` • ${item.birdCount} ekor`}
+                    </p>
+                    {item.weighings && item.weighings.length > 0 && (
+                      <p className="text-[11px] text-[#706858] font-mono mt-1">
+                        Timbangan: {item.weighings.map((w) => shortNumber(toNumber(String(w.weight)))).join(" + ")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 justify-between sm:justify-end">
+<span className="font-mono font-black text-[#1f8f5f]">+{shortNumber(item.quantity)} kg</span>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="font-bold min-w-unit-12"
+                        onPress={() => handleStartEdit(item, originalIndex)}
+                        radius="sm"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                        onPress={() => setDeleteConfirmIndex(originalIndex)}
+                        radius="sm"
+                      >
+                        Hapus
+                      </Button>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* Delete Confirmation Modal */}
       <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">
@@ -318,4 +416,3 @@ export function StockInTab({
     </div>
   );
 }
-

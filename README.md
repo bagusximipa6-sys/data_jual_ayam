@@ -1,6 +1,6 @@
 # Buku Keuangan Usaha (Business Finance Book)
 
-A web-based application to track the finances of a small business, specifically for egg sales.
+A web-based application to track the finances of a small business, specifically for chicken sales.
 
 ## Features
 

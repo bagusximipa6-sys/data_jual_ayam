@@ -198,7 +198,7 @@ export function SalesTab({ sales, role, onAddSale, onUpdateSale, onDeleteSale }:
             <Textarea
               label="Catatan / Keterangan"
               labelPlacement="outside"
-              placeholder="Catatan tambahan (misal: telur pecah, cuaca, dll)"
+placeholder="Catatan tambahan (misal: ayam mati, cuaca, dll)"
               value={form.note}
               onValueChange={(note) => setForm((prev) => ({ ...prev, note }))}
               radius="sm"

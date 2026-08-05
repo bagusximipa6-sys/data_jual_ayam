@@ -83,7 +83,7 @@ export function Header({
               </Chip>
             </div>
             <h1 className="text-2xl font-black tracking-tight sm:text-3xl text-[#191712]">
-              Data Penjualan Telur
+Data Penjualan Ayam
             </h1>
           </div>
         </div>

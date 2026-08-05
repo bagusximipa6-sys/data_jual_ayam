@@ -1,4 +1,4 @@
-import { BakulMaster, BakulRecord, DailySale, ItemMaster, OperationalRecord, StockInRecord, StockOutRecord } from "@/types/finance";
+import { BakulMaster, BakulRecord, DailySale, ItemMaster, OperationalRecord, PenyusutanRecord, StockInRecord, StockOutRecord } from "@/types/finance";
 
 export const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -15,6 +15,16 @@ export const toNumber = (value: string | number): number => {
   if (!value) return 0;
 
   const v = value.trim();
+
+  // Support sum expressions like "40+50+60" (Data Timbangan)
+  if (/\+/.test(v)) {
+    const parts = v.split("+");
+    let total = 0;
+    for (const part of parts) {
+      total += toNumber(part);
+    }
+    return total;
+  }
 
   const fractionMatch = v.match(/^(\d+(?:[.,]\d+)?)?\s*(\d+)\s*\/\s*(\d+)$/);
   if (fractionMatch) {
@@ -87,10 +97,11 @@ export const exportToJSON = (
   stockIn: StockInRecord[] = [],
   stockOut: StockOutRecord[] = [],
   opsCategories: string[] = [],
+  penyusutan: PenyusutanRecord[] = [],
   filename: string = "buku_keuangan_backup"
 ) => {
   const payload = {
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     sales,
     bakulRecords,
@@ -100,6 +111,7 @@ export const exportToJSON = (
     stockIn,
     stockOut,
     opsCategories,
+    penyusutan,
   };
   const jsonContent = JSON.stringify(payload, null, 2);
   const blob = new Blob([jsonContent], { type: "application/json" });
