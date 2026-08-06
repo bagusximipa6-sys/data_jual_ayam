@@ -13,13 +13,24 @@ import {
   Tab,
   Tabs,
 } from "@heroui/react";
-import { LockKeyhole, LogOut, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  CheckCircle,
+  CloudOff,
+  Loader,
+  LockKeyhole,
+  LogOut,
+  ShieldCheck,
+  Sparkles,
+  XCircle,
+} from "lucide-react";
 import { Key, useState } from "react";
 import { Role } from "@/types/finance";
+import { SyncStatus } from "@/lib/sync";
 
 interface HeaderProps {
   stockOutCount: number;
   role: Role;
+  syncStatus: SyncStatus;
   adminUnlocked: boolean;
   onRoleChange: (key: Key) => void;
   onUnlockAdmin: (password: string) => boolean;
@@ -29,9 +40,45 @@ interface HeaderProps {
   onMonthChange: (month: string) => void;
 }
 
+const SyncIndicator = ({ status }: { status: SyncStatus }) => {
+  const styles = {
+    loading: "bg-blue-100 text-blue-800",
+    saving: "bg-blue-100 text-blue-800",
+    saved: "bg-green-100 text-green-800",
+    error: "bg-red-100 text-red-800",
+    offline: "bg-gray-200 text-gray-800",
+  };
+  const icons = {
+    loading: <Loader size={14} className="animate-spin" />,
+    saving: <Loader size={14} className="animate-spin" />,
+    saved: <CheckCircle size={14} />,
+    error: <XCircle size={14} />,
+    offline: <CloudOff size={14} />,
+  };
+  const labels = {
+    loading: "Memuat...",
+    saving: "Menyimpan...",
+    saved: "Tersimpan",
+    error: "Gagal Simpan",
+    offline: "Offline",
+  };
+
+  return (
+    <Chip
+      size="sm"
+      className={`${styles[status]} font-bold`}
+      radius="sm"
+      startContent={icons[status]}
+    >
+      {labels[status]}
+    </Chip>
+  );
+};
+
 export function Header({
   stockOutCount,
   role,
+  syncStatus,
   adminUnlocked,
   onRoleChange,
   onUnlockAdmin,
@@ -89,6 +136,9 @@ Data Penjualan Ayam
         </div>
 
 <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
+          {/* Sync Status */}
+          <SyncIndicator status={syncStatus} />
+
           {/* Month Selector */}
           {availableMonths.length > 0 && (
             <div className="w-full sm:w-auto sm:min-w-[160px]">

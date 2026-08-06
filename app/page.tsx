@@ -18,7 +18,7 @@ ShoppingCart,
   Users,
 } from "lucide-react";
 import type { Key } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { BakulTab } from "@/components/BakulTab";
 import { FinancialReportTab } from "@/components/FinancialReportTab";
@@ -29,6 +29,13 @@ import { OpsTab } from "@/components/OpsTab";
 import { PenyusutanTab } from "@/components/PenyusutanTab";
 import { StockInTab } from "@/components/StockInTab";
 import { StockOutTab } from "@/components/StockOutTab";
+import {
+  fetchAllFromServer,
+  hasAnyServerData,
+  pushAllToServer,
+  type LocalDataset,
+  type SyncStatus,
+} from "@/lib/sync";
 import { rupiah, shortNumber, unique } from "@/lib/utils";
 import {
   BakulMaster,
@@ -95,6 +102,7 @@ const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false
   const [role, setRole] = useState<Role>("user");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const isAdmin = role === "admin";
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
 
   const [sales, setSales] = useState<DailySale[]>(() =>
     loadFromStorage<DailySale[]>(SALES_KEY, initialSales as DailySale[])
@@ -132,51 +140,124 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
     return latest || new Date().toISOString().slice(0, 10);
   });
 
-  // Save to LocalStorage on changes (only on client)
+  // JSON Import & Reset
+  const handleImportData = useCallback(
+    (data: {
+      sales: DailySale[];
+      bakulRecords: BakulRecord[];
+      ops: OperationalRecord[];
+      items?: ItemMaster[];
+      bakulMasters?: BakulMaster[];
+      stockIn?: StockInRecord[];
+      stockOut?: StockOutRecord[];
+      opsCategories?: string[];
+      penyusutan?: PenyusutanRecord[];
+    }) => {
+      setSales(data.sales);
+      setBakulRecords(data.bakulRecords);
+      setOps(data.ops);
+      if (data.items) setItems(data.items);
+      if (data.bakulMasters) setBakulMasters(data.bakulMasters);
+      if (data.stockIn) setStockIn(data.stockIn);
+      if (data.stockOut) setStockOut(data.stockOut);
+      if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
+      if (data.penyusutan) setPenyusutan(data.penyusutan);
+    },
+    []
+  );
+
+  // This effect runs only once on the client to decide the source of truth.
   useEffect(() => {
     if (!isClient) return;
-    localStorage.setItem(SALES_KEY, JSON.stringify(sales));
-  }, [sales, isClient]);
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(BAKUL_KEY, JSON.stringify(bakulRecords));
-  }, [bakulRecords, isClient]);
+    const initializeData = async () => {
+      setSyncStatus("loading");
+      const serverData = await fetchAllFromServer();
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(OPS_KEY, JSON.stringify(ops));
-  }, [ops, isClient]);
+      if (serverData === null) {
+        // Network error or server issue, app is offline.
+        // Data will be loaded from localStorage by the useState initializers.
+        setSyncStatus("offline");
+        return;
+      }
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
-  }, [items, isClient]);
+      if (hasAnyServerData(serverData)) {
+        // Server has data, this is the source of truth.
+        handleImportData({
+          sales: serverData.sales ?? [],
+          bakulRecords: serverData.bakulRecords ?? [],
+          ops: serverData.ops ?? [],
+          items: serverData.items ?? [],
+          bakulMasters: serverData.bakulMasters ?? [],
+          stockIn: serverData.stockIn ?? [],
+          stockOut: serverData.stockOut ?? [],
+          opsCategories: serverData.opsCategories ?? [],
+          penyusutan: loadFromStorage(PENYUSUTAN_KEY, initialPenyusutan),
+        });
+        setSyncStatus("saved");
+      } else {
+        // Server is empty. Check if local storage has data to push.
+        const localData: LocalDataset = {
+          sales: loadFromStorage(SALES_KEY, []),
+          bakulRecords: loadFromStorage(BAKUL_KEY, []),
+          ops: loadFromStorage(OPS_KEY, []),
+          items: loadFromStorage(ITEMS_KEY, []),
+          bakulMasters: loadFromStorage(BAKUL_MASTERS_KEY, []),
+          stockIn: loadFromStorage(STOCK_IN_KEY, []),
+          stockOut: loadFromStorage(STOCK_OUT_KEY, []),
+          opsCategories: loadFromStorage(OPS_CATEGORIES_KEY, []),
+        };
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(BAKUL_MASTERS_KEY, JSON.stringify(bakulMasters));
-  }, [bakulMasters, isClient]);
+        if (hasAnyServerData(localData)) {
+          // Local storage has data, push it to the server.
+          setSyncStatus("saving");
+          const success = await pushAllToServer(localData);
+          setSyncStatus(success ? "saved" : "error");
+        } else {
+          // Both server and local are empty. Use initial data.
+          setSyncStatus("saved");
+        }
+      }
+    };
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(STOCK_IN_KEY, JSON.stringify(stockIn));
-  }, [stockIn, isClient]);
+    initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, handleImportData]);
 
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(STOCK_OUT_KEY, JSON.stringify(stockOut));
-  }, [stockOut, isClient]);
-
-useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(OPS_CATEGORIES_KEY, JSON.stringify(opsCategories));
-  }, [opsCategories, isClient]);
-
+  // Save `penyusutan` to LocalStorage (it's not synced to the server)
   useEffect(() => {
     if (!isClient) return;
     localStorage.setItem(PENYUSUTAN_KEY, JSON.stringify(penyusutan));
   }, [penyusutan, isClient]);
+
+  // This effect handles pushing data to the server whenever it changes.
+  useEffect(() => {
+    // Don't save during initial load or if offline.
+    if (syncStatus === "loading" || syncStatus === "offline" || !isClient) {
+      return;
+    }
+
+    const handler = setTimeout(async () => {
+      setSyncStatus("saving");
+      const dataset: LocalDataset = {
+        sales,
+        bakulRecords,
+        ops,
+        items,
+        bakulMasters,
+        stockIn,
+        stockOut,
+        opsCategories,
+      };
+      const success = await pushAllToServer(dataset);
+      setSyncStatus(success ? "saved" : "error");
+    }, 1500); // Debounce for 1.5 seconds
+
+    return () => {
+      clearTimeout(handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories]);
 
   // User only sees unlocked menus; admin sees all menus
   const visibleMenus = useMemo(
@@ -423,29 +504,6 @@ const handleDeleteOpsCategory = (category: string) => {
     setPenyusutan((prev) => prev.filter((_, i) => i !== index));
   };
 
-// JSON Import & Reset
-  const handleImportData = (data: {
-    sales: DailySale[];
-    bakulRecords: BakulRecord[];
-    ops: OperationalRecord[];
-    items?: ItemMaster[];
-    bakulMasters?: BakulMaster[];
-stockIn?: StockInRecord[];
-    stockOut?: StockOutRecord[];
-    opsCategories?: string[];
-    penyusutan?: PenyusutanRecord[];
-  }) => {
-    setSales(data.sales);
-    setBakulRecords(data.bakulRecords);
-    setOps(data.ops);
-    if (data.items) setItems(data.items);
-    if (data.bakulMasters) setBakulMasters(data.bakulMasters);
-    if (data.stockIn) setStockIn(data.stockIn);
-    if (data.stockOut) setStockOut(data.stockOut);
-    if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
-    if (data.penyusutan) setPenyusutan(data.penyusutan);
-  };
-
   const handleResetData = () => {
     setSales(initialSales as DailySale[]);
     setBakulRecords(initialBakulRecords as BakulRecord[]);
@@ -483,6 +541,7 @@ setStockIn(initialStockIn as StockInRecord[]);
       <Header
         stockOutCount={stockOut.length}
         role={role}
+        syncStatus={syncStatus}
         adminUnlocked={adminUnlocked}
         onRoleChange={handleRoleChange}
         onUnlockAdmin={handleUnlockAdmin}
