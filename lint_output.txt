@@ -1,0 +1,51 @@
+
+> make-something@0.1.0 lint
+> eslint app/
+
+
+C:\App\buku-keuangan-usaha\data_jual_ayam\app\page.tsx
+   90:34  error    Error: Cannot access variable before it is declared
+
+`menus` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\App\buku-keuangan-usaha\data_jual_ayam\app\page.tsx:90:34
+  88 |   useEffect(() => {
+  89 |     if (role === "user") {
+> 90 |       const lockedKeys = new Set(menus.filter((m) => m.adminOnly).map((m) => m.key));
+     |                                  ^^^^^ `menus` accessed before it is declared
+  91 |       if (lockedKeys.has(menu)) {
+  92 |         setMenu("dashboard");
+  93 |       }
+
+C:\App\buku-keuangan-usaha\data_jual_ayam\app\page.tsx:179:1
+  177 |   }, [penyusutan, isClient]);
+  178 |
+> 179 | const menus = [
+      | ^^^^^^^^^^^^^^^
+> 180 |     { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 181 |     { key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: true },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 182 |     { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 183 | { key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 184 |     { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 185 |     { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 186 |     { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 187 |     { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 188 |   ];
+      | ^^^^^ `menus` is declared here
+  189 |
+  190 |   // User only sees unlocked menus; admin sees all menus
+  191 |   const visibleMenus = useMemo(  react-hooks/immutability
+   95:6   warning  React Hook useEffect has a missing dependency: 'menus'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/exhaustive-deps
+  193:5   warning  React Hook useMemo has a missing dependency: 'menus'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          react-hooks/exhaustive-deps
+  281:9   warning  'bakulSummary' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               @typescript-eslint/no-unused-vars
+
+✖ 4 problems (1 error, 3 warnings)
+

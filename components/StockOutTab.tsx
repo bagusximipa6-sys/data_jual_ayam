@@ -52,6 +52,7 @@ export function StockOutTab({
   const [form, setForm] = useState({
     date: DEFAULT_DATE,
     bakulName: bakulNames[0] || "",
+    birdCount: "",
   });
   const [weighingsInput, setWeighingsInput] = useState("");
 
@@ -86,6 +87,7 @@ export function StockOutTab({
     setForm({
       date: item.date,
       bakulName: item.bakulName,
+      birdCount: item.birdCount != null ? String(item.birdCount) : "",
     });
     setWeighingsInput(
       (item.weighings ?? [])
@@ -100,6 +102,7 @@ export function StockOutTab({
     setForm({
       date: DEFAULT_DATE,
       bakulName: bakulNames[0] || "",
+      birdCount: "",
     });
     setWeighingsInput("");
   };
@@ -120,6 +123,7 @@ export function StockOutTab({
       price: autoPrice,
       saleType: "eceran",
       weighings: parsedWeighings(),
+      birdCount: form.birdCount ? toNumber(form.birdCount) : undefined,
     };
 
     if (editingIndex !== null) {
@@ -239,18 +243,6 @@ export function StockOutTab({
             )}
           </div>
 
-          <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] px-3 py-2 text-xs">
-            <span className="font-bold text-[#706858]">Barang keluar:</span>{" "}
-            <span className="font-black text-[#191712]">
-              {editingIndex !== null ? stockOut[editingIndex].itemName : activeItemName}
-            </span>
-            {itemNames.length === 0 && (
-              <p className="mt-1 text-[11px] font-medium text-amber-700">
-                Belum ada master barang. Transaksi akan dicatat sebagai Ayam.
-              </p>
-            )}
-          </div>
-
           <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3 space-y-2">
             <div className="flex items-center gap-1.5">
               <Scale size={14} className="text-[#706858]" />
@@ -280,16 +272,30 @@ export function StockOutTab({
             )}
           </div>
 
-          <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5 space-y-2">
-            <div className="flex justify-between gap-3 text-xs">
-              <span className="font-bold text-[#706858]">Harga Jual / kg (dari Master Bakul)</span>
-              <span className="font-mono font-black text-[#191712]">{rupiah(autoPrice)}</span>
-            </div>
-            <div className="flex justify-between gap-3 text-xs">
-              <span className="font-bold text-[#706858]">Total Penjualan</span>
-              <span className="font-mono font-black text-[#1f8f5f]">{rupiah(totalAuto)}</span>
-            </div>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
+            <Input
+              labelPlacement="outside"
+              placeholder="Opsional, cth. 50"
+              value={form.birdCount}
+              onValueChange={(birdCount) => setForm((prev) => ({ ...prev, birdCount }))}
+              radius="sm"
+              endContent={<span className="text-xs font-bold text-[#706858]">ekor</span>}
+            />
           </div>
+
+          {isAdmin && (
+            <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5 space-y-2">
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="font-bold text-[#706858]">Harga Jual / kg (dari Master Bakul)</span>
+                <span className="font-mono font-black text-[#191712]">{rupiah(autoPrice)}</span>
+              </div>
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="font-bold text-[#706858]">Total Penjualan</span>
+                <span className="font-mono font-black text-[#1f8f5f]">{rupiah(totalAuto)}</span>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <Button
@@ -360,7 +366,8 @@ export function StockOutTab({
                   <div>
                     <h3 className="font-black text-[#191712]">{item.itemName}</h3>
                     <p className="text-xs text-[#706858] font-medium">
-                      {item.date} - {item.bakulName}
+                      {item.date} - {item.bakulName}{" "}
+                      {item.birdCount != null && item.birdCount > 0 && `• ${item.birdCount} ekor`}
                     </p>
                     {isAdmin && (
                       <p className="mt-1 text-[10px] text-[#706858] font-medium">

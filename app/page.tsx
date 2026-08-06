@@ -64,6 +64,17 @@ const OPS_CATEGORIES_KEY = "finance_book_rpa_ops_categories_v1";
 const PENYUSUTAN_KEY = "finance_book_rpa_penyusutan_v1";
 const ADMIN_PASSWORD = "jeko2026";
 
+const MENUS = [
+  { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
+  { key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: false },
+  { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
+  { key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
+  { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
+  { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
+  { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
+  { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
+];
+
 function loadFromStorage<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -84,16 +95,6 @@ const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false
   const [role, setRole] = useState<Role>("user");
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const isAdmin = role === "admin";
-
-  // When switching to user mode, reset to a visible menu if currently on a locked one
-  useEffect(() => {
-    if (role === "user") {
-      const lockedKeys = new Set(menus.filter((m) => m.adminOnly).map((m) => m.key));
-      if (lockedKeys.has(menu)) {
-        setMenu("dashboard");
-      }
-    }
-  }, [role, menu]);
 
   const [sales, setSales] = useState<DailySale[]>(() =>
     loadFromStorage<DailySale[]>(SALES_KEY, initialSales as DailySale[])
@@ -177,20 +178,9 @@ useEffect(() => {
     localStorage.setItem(PENYUSUTAN_KEY, JSON.stringify(penyusutan));
   }, [penyusutan, isClient]);
 
-const menus = [
-    { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
-{ key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: false },
-    { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
-{ key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
-    { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
-    { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
-    { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
-    { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
-  ];
-
   // User only sees unlocked menus; admin sees all menus
   const visibleMenus = useMemo(
-    () => menus.filter((menu) => role === "admin" || !menu.adminOnly),
+    () => MENUS.filter((menu) => role === "admin" || !menu.adminOnly),
     [role]
   );
 
@@ -278,22 +268,6 @@ const chickenPrices = useMemo(() => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [items, dailyRecords]);
 
-  // Bakul Summary Item breakdown (filtered by month)
-  const bakulSummary = useMemo(
-    () =>
-      unique(filteredBakul.map((item) => item.name)).map((name) => {
-        const rows = filteredBakul.filter((item) => item.name === name);
-        return {
-          name,
-          bill: rows.reduce((sum, item) => sum + item.bill, 0),
-          paid: rows.reduce((sum, item) => sum + item.paid, 0),
-          balance: rows.reduce((sum, item) => sum + item.balance, 0),
-          count: rows.length,
-        };
-      }),
-    [filteredBakul]
-  );
-
 const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), [bakulMasters]);
   const itemNames = useMemo(() => unique(items.map((item) => item.name)), [items]);
   const categories = useMemo(
@@ -314,6 +288,9 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
   const handleLogoutAdmin = () => {
     setAdminUnlocked(false);
     setRole("user");
+    if (MENUS.some((item) => item.key === menu && item.adminOnly)) {
+      setMenu("dashboard");
+    }
   };
 
   const handleRoleChange = (key: Key) => {
@@ -322,6 +299,9 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
       return;
     }
     setRole(nextRole);
+    if (nextRole === "user" && MENUS.some((item) => item.key === menu && item.adminOnly)) {
+      setMenu("dashboard");
+    }
   };
 
   // CRUD Bakul
@@ -764,6 +744,7 @@ setStockIn(initialStockIn as StockInRecord[]);
           {menu === "stockin" && (
             <StockInTab
               stockIn={stockIn}
+              items={items}
               itemNames={itemNames}
               role={role}
               onAddStockIn={handleAddStockIn}

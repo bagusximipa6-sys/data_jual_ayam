@@ -11,7 +11,7 @@ import {
   ModalContent,
   ModalHeader,
 } from "@heroui/react";
-import { AlertTriangle, Boxes, Download, MapPin, Plus, RefreshCw, Trash2, Upload, UserRound } from "lucide-react";
+import { AlertTriangle, Boxes, Download, Plus, RefreshCw, Trash2, Upload, UserRound } from "lucide-react";
 import { useRef, useState } from "react";
 import { exportToJSON, rupiah, toNumber } from "@/lib/utils";
 import {
@@ -63,7 +63,6 @@ stockIn?: StockInRecord[];
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function MasterTab({
-  categories,
   sales,
   bakulRecords,
   ops,
@@ -374,8 +373,7 @@ items.map((item, index) => {
                   <CardBody className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h3 className="font-black text-[#191712]">{master.name}</h3>
-                      <p className="text-xs text-[#706858] flex items-center gap-1">
-                        <MapPin size={12} />
+                      <p className="text-xs text-[#706858]">
                         Harga jual {rupiah(master.sellPrice ?? 0)} / kg
                       </p>
                     </div>

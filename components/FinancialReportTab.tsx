@@ -6,11 +6,8 @@ import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getMonthLabel, rupiah, shortNumber } from "@/lib/utils";
-import {
-  emptyPaymentBreakdown,
+import {  
   OperationalRecord,
-  PaymentBreakdown,
-  PaymentMethod,
   PenyusutanRecord,
   ProfitLossSummary,
   Role,
@@ -26,6 +23,12 @@ interface FinancialReportTabProps {
   ops: OperationalRecord[];
   penyusutan?: PenyusutanRecord[];
   role: Role;
+}
+
+interface jsPDFWithAutoTable extends jsPDF {
+  lastAutoTable: {
+    finalY: number;
+  };
 }
 
 // ===== Helpers to build Profit/Loss summary =====
@@ -65,38 +68,22 @@ const mergeBreakdown = (target: SaleBreakdown, source: SaleBreakdown) => {
   target.grosirCount += source.grosirCount;
 };
 
-const addToPaymentBreakdown = (
-  bd: PaymentBreakdown,
-  method: PaymentMethod | undefined,
-  qty: number,
-  omzet: number
-) => {
-  const m = method ?? "cash";
-  if (m === "cash") {
-    bd.cashQty += qty;
-    bd.cashOmzet += omzet;
-    bd.cashCount += 1;
-  } else if (m === "transfer") {
-    bd.transferQty += qty;
-    bd.transferOmzet += omzet;
-    bd.transferCount += 1;
-  } else {
-    bd.hutangQty += qty;
-    bd.hutangOmzet += omzet;
-    bd.hutangCount += 1;
-  }
+const getShortMonth = (dateStr: string) => {
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  const month = parseInt(dateStr.slice(5, 7), 10) - 1;
+  return monthNames[month] ?? dateStr;
 };
 
-const mergePaymentBreakdown = (target: PaymentBreakdown, source: PaymentBreakdown) => {
-  target.cashQty += source.cashQty;
-  target.cashOmzet += source.cashOmzet;
-  target.transferQty += source.transferQty;
-  target.transferOmzet += source.transferOmzet;
-  target.hutangQty += source.hutangQty;
-  target.hutangOmzet += source.hutangOmzet;
-  target.cashCount += source.cashCount;
-  target.transferCount += source.transferCount;
-  target.hutangCount += source.hutangCount;
+const dummyPaymentBreakdown = {
+  cashQty: 0,
+  cashOmzet: 0,
+  cashCount: 0,
+  transferQty: 0,
+  transferOmzet: 0,
+  transferCount: 0,
+  hutangQty: 0,
+  hutangOmzet: 0,
+  hutangCount: 0,
 };
 
 const buildProfitLoss = (
@@ -105,7 +92,6 @@ const buildProfitLoss = (
   ops: OperationalRecord[],
   penyusutan: PenyusutanRecord[] = []
 ): ProfitLossSummary => {
-  const totalPenyusutan = penyusutan.reduce((sum, r) => sum + r.amount, 0);
   // Map item name -> buyPrice from latest Barang Masuk (stock in) record
   const buyPriceMap = new Map<string, number>();
   const sortedStockIn = [...stockIn].sort((a, b) => a.date.localeCompare(b.date));
@@ -121,6 +107,12 @@ const buildProfitLoss = (
 
   // Build daily items from each StockOut record
   const dailyMap = new Map<string, ProfitLossSummary["daily"][number]>();
+  const totalPenyusutanValue = penyusutan.reduce((sum, r) => {
+    // Use the buy price from the date of the shrinkage, or the latest available if not found
+    const buyPrice = buyPriceMap.get(r.itemName.toLowerCase()) ?? 0;
+    return sum + r.amount * buyPrice;
+  }, 0);
+
   const sorted = [...stockOut].sort((a, b) => a.date.localeCompare(b.date));
 
   for (const record of sorted) {
@@ -131,6 +123,7 @@ const buildProfitLoss = (
 
 const existing = dailyMap.get(record.date);
     const itemRow = {
+      id: record.id,
       date: record.date,
       itemName: record.itemName,
       bakulName: record.bakulName,
@@ -141,7 +134,6 @@ const existing = dailyMap.get(record.date);
       modalCost,
       profit,
       saleType: (record.saleType ?? "eceran") as SaleType,
-      paymentMethod: record.paymentMethod,
     };
 
     if (existing) {
@@ -151,12 +143,9 @@ const existing = dailyMap.get(record.date);
       existing.totalModal += modalCost;
       existing.totalProfit += profit;
       addToBreakdown(existing.saleBreakdown, record.saleType, record.quantity, omzet);
-      addToPaymentBreakdown(existing.paymentBreakdown, record.paymentMethod, record.quantity, omzet);
     } else {
       const breakdown = emptyBreakdown();
       addToBreakdown(breakdown, record.saleType, record.quantity, omzet);
-      const paymentBreakdown = emptyPaymentBreakdown();
-      addToPaymentBreakdown(paymentBreakdown, record.paymentMethod, record.quantity, omzet);
       dailyMap.set(record.date, {
         date: record.date,
         totalQuantity: record.quantity,
@@ -166,8 +155,8 @@ const existing = dailyMap.get(record.date);
         totalOperational: 0,
         netProfit: profit,
         saleBreakdown: breakdown,
-        paymentBreakdown,
         items: [itemRow],
+        paymentBreakdown: dummyPaymentBreakdown,
       });
     }
   }
@@ -216,7 +205,6 @@ const existingWeek = weeklyMap.get(weekKey);
       existingWeek.totalOperational += day.totalOperational;
       existingWeek.netProfit += day.netProfit;
       mergeBreakdown(existingWeek.saleBreakdown, day.saleBreakdown);
-      mergePaymentBreakdown(existingWeek.paymentBreakdown, day.paymentBreakdown);
     } else {
       weeklyMap.set(weekKey, {
         label: weekLabel,
@@ -228,7 +216,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalOperational: day.totalOperational,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
-        paymentBreakdown: { ...day.paymentBreakdown },
+        paymentBreakdown: day.paymentBreakdown,
       });
     }
 
@@ -242,7 +230,6 @@ const existingWeek = weeklyMap.get(weekKey);
       existingMonth.totalOperational += day.totalOperational;
       existingMonth.netProfit += day.netProfit;
       mergeBreakdown(existingMonth.saleBreakdown, day.saleBreakdown);
-      mergePaymentBreakdown(existingMonth.paymentBreakdown, day.paymentBreakdown);
     } else {
       monthlyMap.set(monthKey, {
         label: getMonthLabel(monthKey),
@@ -254,7 +241,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalOperational: day.totalOperational,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
-        paymentBreakdown: { ...day.paymentBreakdown },
+        paymentBreakdown: day.paymentBreakdown,
       });
     }
   }
@@ -263,10 +250,8 @@ const existingWeek = weeklyMap.get(weekKey);
   const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.period.localeCompare(b.period));
 
   const totalBreakdown = emptyBreakdown();
-  const totalPaymentBreakdown = emptyPaymentBreakdown();
   for (const day of daily) {
     mergeBreakdown(totalBreakdown, day.saleBreakdown);
-    mergePaymentBreakdown(totalPaymentBreakdown, day.paymentBreakdown);
   }
 
   return {
@@ -278,20 +263,12 @@ const existingWeek = weeklyMap.get(weekKey);
 totalProfit: daily.reduce((sum, d) => sum + d.totalProfit, 0),
     totalOperational: daily.reduce((sum, d) => sum + d.totalOperational, 0),
     netProfit: daily.reduce((sum, d) => sum + d.netProfit, 0),
-    netProfitAfterPenyusutan: totalPenyusutan
-      ? daily.reduce((sum, d) => sum + d.netProfit, 0) - totalPenyusutan
-      : daily.reduce((sum, d) => sum + d.netProfit, 0),
-    totalPenyusutan,
+    netProfitAfterPenyusutan: daily.reduce((sum, d) => sum + d.netProfit, 0) - totalPenyusutanValue,
+    totalPenyusutan: totalPenyusutanValue,
     totalQuantity: daily.reduce((sum, d) => sum + d.totalQuantity, 0),
     saleBreakdown: totalBreakdown,
-    paymentBreakdown: totalPaymentBreakdown,
+    paymentBreakdown: dummyPaymentBreakdown,
   };
-};
-
-const getShortMonth = (dateStr: string) => {
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-  const month = parseInt(dateStr.slice(5, 7), 10) - 1;
-  return monthNames[month] ?? dateStr;
 };
 
 const exportProfitCSV = (summary: ProfitLossSummary) => {
@@ -375,73 +352,81 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   });
 
   // Monthly table
-  y += 6;
+  let lastY = y + 6;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text("Pendapatan Bulanan", 14, y);
-  autoTable(doc, {
-    startY: y + 3,
-    head: [["Periode", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
-    body: summary.monthly.map((row) => [
-      row.label,
-      shortNumber(row.totalQuantity),
-      rupiah(row.totalOmzet),
-      rupiah(row.totalModal),
-      rupiah(row.totalProfit),
-      rupiah(row.totalOperational),
-      rupiah(row.netProfit),
-    ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [247, 245, 239] },
-  });
+  doc.text("Pendapatan Bulanan", 14, lastY);
+  if (summary.monthly.length > 0) {
+    autoTable(doc, {
+      startY: lastY + 3,
+      head: [["Periode", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      body: summary.monthly.map((row) => [
+        row.label,
+        shortNumber(row.totalQuantity),
+        rupiah(row.totalOmzet),
+        rupiah(row.totalModal),
+        rupiah(row.totalProfit),
+        rupiah(row.totalOperational),
+        rupiah(row.netProfit),
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [247, 245, 239] },
+    });
+    lastY = (doc as jsPDFWithAutoTable).lastAutoTable.finalY;
+  }
 
   // Weekly table
-  const weeklyStart = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  lastY += 8;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text("Pendapatan Mingguan", 14, weeklyStart);
-  autoTable(doc, {
-    startY: weeklyStart + 3,
-    head: [["Periode Minggu", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
-    body: summary.weekly.map((row) => [
-      row.label,
-      shortNumber(row.totalQuantity),
-      rupiah(row.totalOmzet),
-      rupiah(row.totalModal),
-      rupiah(row.totalProfit),
-      rupiah(row.totalOperational),
-      rupiah(row.netProfit),
-    ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [247, 245, 239] },
-  });
+  doc.text("Pendapatan Mingguan", 14, lastY);
+  if (summary.weekly.length > 0) {
+    autoTable(doc, {
+      startY: lastY + 3,
+      head: [["Periode Minggu", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      body: summary.weekly.map((row) => [
+        row.label,
+        shortNumber(row.totalQuantity),
+        rupiah(row.totalOmzet),
+        rupiah(row.totalModal),
+        rupiah(row.totalProfit),
+        rupiah(row.totalOperational),
+        rupiah(row.netProfit),
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [247, 245, 239] },
+    });
+    lastY = (doc as jsPDFWithAutoTable).lastAutoTable.finalY;
+  }
 
   // Daily table
-  const dailyStart = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  lastY += 8;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text("Pendapatan Harian", 14, dailyStart);
-  autoTable(doc, {
-    startY: dailyStart + 3,
-    head: [["Tanggal", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
-    body: summary.daily
-      .slice()
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .map((d) => [
-        d.date,
-        shortNumber(d.totalQuantity),
-        rupiah(d.totalOmzet),
-        rupiah(d.totalModal),
-        rupiah(d.totalProfit),
-        rupiah(d.totalOperational),
-        rupiah(d.netProfit),
-      ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [247, 245, 239] },
-  });
+  doc.text("Pendapatan Harian", 14, lastY);
+  if (summary.daily.length > 0) {
+    autoTable(doc, {
+      startY: lastY + 3,
+      head: [["Tanggal", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      body: summary.daily
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map((d) => [
+          d.date,
+          shortNumber(d.totalQuantity),
+          rupiah(d.totalOmzet),
+          rupiah(d.totalModal),
+          rupiah(d.totalProfit),
+          rupiah(d.totalOperational),
+          rupiah(d.netProfit),
+        ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [25, 23, 18], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [247, 245, 239] },
+    });
+  }
 
   doc.save("laporan_laba_rugi.pdf");
 };
@@ -714,7 +699,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                       <div className="mt-3 space-y-1">
                         {day.items.map((item, idx) => (
                           <div
-                            key={`${item.date}-${item.itemName}-${item.bakulName}-${idx}`}
+                            key={item.id ?? `${item.date}-${item.itemName}-${item.bakulName}-${idx}`}
                             className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs"
                           >
                             <div className="flex flex-wrap items-center gap-2">
@@ -789,4 +774,3 @@ label: string;
     </div>
   );
 }
-

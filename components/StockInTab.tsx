@@ -14,13 +14,14 @@ import {
   Textarea,
 } from "@heroui/react";
 import { AlertCircle, Edit2, Lock, Plus, Search, Scale, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { shortNumber, toNumber } from "@/lib/utils";
-import { Role, StockInRecord, WeighingEntry } from "@/types/finance";
+import { useMemo, useState } from "react";
+import { rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { ItemMaster, Role, StockInRecord, WeighingEntry } from "@/types/finance";
 
 interface StockInTabProps {
   stockIn: StockInRecord[];
   itemNames: string[];
+  items: ItemMaster[];
   role: Role;
   onAddStockIn: (record: StockInRecord) => void;
   onUpdateStockIn: (index: number, record: StockInRecord) => void;
@@ -34,6 +35,7 @@ const nextId = () => `SI-${++stockInIdCounter}`;
 
 export function StockInTab({
   stockIn,
+  items,
   itemNames,
   role,
   onAddStockIn,
@@ -53,6 +55,13 @@ const [form, setForm] = useState({
   const [weighingsInput, setWeighingsInput] = useState("");
 
 const isAdmin = role === "admin";
+
+  const selectedItemMaster = useMemo(
+    () => items.find((i) => i.name.toLowerCase() === form.itemName.toLowerCase()),
+    [items, form.itemName]
+  );
+
+  const autoBuyPrice = selectedItemMaster?.buyPrice ?? 0;
 
   // Stok ditutup setiap jam 3 sore (15:00). Setelah 15:00, stok untuk hari ini dikunci
   // dan dibuka kembali untuk hari berikutnya (reset mulai dari nol).
@@ -130,12 +139,14 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     const quantity = weighingsTotal;
     if (!itemName || !quantity) return;
 
+    const itemMaster = items.find((i) => i.name.toLowerCase() === itemName.toLowerCase());
+
     const record: StockInRecord = {
       id: editingIndex !== null ? stockIn[editingIndex].id : nextId(),
       date: form.date,
       itemName,
       quantity,
-      buyPrice: 0,
+      buyPrice: itemMaster?.buyPrice ?? 0,
       birdCount: form.birdCount ? toNumber(form.birdCount) : undefined,
       weighings: parsedWeighings(),
     };
@@ -255,6 +266,21 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 </div>
               )}
             </div>
+
+            {isAdmin && autoBuyPrice > 0 && (
+              <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5 space-y-2">
+                <div className="flex justify-between gap-3 text-xs">
+                  <span className="font-bold text-[#706858]">Harga Beli Otomatis / kg</span>
+                  <span className="font-mono font-black text-[#191712]">{rupiah(autoBuyPrice)}</span>
+                </div>
+                {weighingsTotal > 0 && (
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="font-bold text-[#706858]">Total Modal</span>
+                    <span className="font-mono font-black text-[#1f8f5f]">{rupiah(autoBuyPrice * weighingsTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
 <div className="space-y-1">
               <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>

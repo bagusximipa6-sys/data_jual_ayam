@@ -76,6 +76,7 @@ export type StockOutRecord = {
   saleType?: "eceran" | "grosir";
   paymentMethod?: "cash" | "transfer" | "hutang";
   weighings?: WeighingEntry[];
+  birdCount?: number;
 };
 
 export type PiutangPayment = {
@@ -149,6 +150,7 @@ export const emptyPaymentBreakdown = (): PaymentBreakdown => ({
 });
 
 export type DailyReportItem = {
+  id: string;
   date: string;
   itemName: string;
   bakulName: string;
