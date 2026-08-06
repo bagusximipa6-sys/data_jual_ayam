@@ -26,8 +26,14 @@ CREATE TABLE IF NOT EXISTS stock_in (
   item_name TEXT NOT NULL,
   quantity NUMERIC NOT NULL DEFAULT 0,
   buy_price NUMERIC NOT NULL DEFAULT 0,
+  bird_count NUMERIC,
+  weighings JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Kolom tambahan untuk stock_in (idempotent untuk migrasi berulang)
+ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS bird_count NUMERIC;
+ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb;
 
 -- Tabel: Barang Keluar (Stock Out / Penjualan)
 CREATE TABLE IF NOT EXISTS stock_out (
@@ -39,8 +45,14 @@ CREATE TABLE IF NOT EXISTS stock_out (
   price NUMERIC NOT NULL DEFAULT 0,
   sale_type TEXT DEFAULT 'eceran',
   payment_method TEXT DEFAULT 'cash',
+  bird_count NUMERIC,
+  weighings JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Kolom tambahan untuk stock_out (idempotent untuk migrasi berulang)
+ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC;
+ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb;
 
 -- Tabel: Laporan Harian (Sales)
 CREATE TABLE IF NOT EXISTS sales (
@@ -85,6 +97,17 @@ CREATE TABLE IF NOT EXISTS ops_records (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Tabel: Penyusutan (kehilangan stok / ayam menyusut)
+CREATE TABLE IF NOT EXISTS penyusutan (
+  id TEXT PRIMARY KEY,
+  date TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  expected_stock NUMERIC NOT NULL DEFAULT 0,
+  actual_stock NUMERIC NOT NULL DEFAULT 0,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Tabel: Meta Aplikasi (JSONB untuk data dinamis / kategori)
 CREATE TABLE IF NOT EXISTS app_meta (
   id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -98,7 +121,22 @@ INSERT INTO app_meta (id, ops_categories, version)
 VALUES (1, '[]'::jsonb, 4)
 ON CONFLICT (id) DO NOTHING;
 
+-- Tabel: Riwayat Aktivitas (Alur Pengawasan)
+-- Mencatat setiap aksi Tambah/Edit/Hapus beserta identitas staf (Clerk) yang melakukannya.
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,          -- 'add' | 'update' | 'delete' | 'reset'
+  entity TEXT NOT NULL,          -- 'Barang Masuk' | 'Barang Keluar' | 'Piutang Bakul' | dst.
+  entity_id TEXT DEFAULT '',     -- id record terkait (bila ada)
+  summary TEXT DEFAULT '',       -- ringkasan singkat aksi
+  user_email TEXT DEFAULT '',
+  user_name TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Indeks untuk query umum
+CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs (user_email);
 CREATE INDEX IF NOT EXISTS idx_stock_out_date ON stock_out (date);
 CREATE INDEX IF NOT EXISTS idx_stock_out_bakul ON stock_out (bakul_name);
 CREATE INDEX IF NOT EXISTS idx_stock_in_date ON stock_in (date);

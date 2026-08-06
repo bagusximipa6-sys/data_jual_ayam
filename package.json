@@ -13,7 +13,9 @@
     "lint": "eslint app/"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.6.5",
     "@heroui/react": "^2.8.9",
+    "@neondatabase/serverless": "^1.1.0",
     "@vercel/postgres": "^0.10.0",
     "framer-motion": "^12.34.3",
     "jspdf": "^4.2.1",

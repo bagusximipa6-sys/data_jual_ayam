@@ -79,6 +79,19 @@ export type StockOutRecord = {
   birdCount?: number;
 };
 
+export type ActivityAction = "add" | "update" | "delete" | "reset";
+
+export type ActivityLog = {
+  id: string;
+  action: ActivityAction;
+  entity: string;
+  entityId?: string;
+  summary: string;
+  userEmail: string;
+  userName: string;
+  createdAt: string;
+};
+
 export type PiutangPayment = {
   id: string;
   date: string;

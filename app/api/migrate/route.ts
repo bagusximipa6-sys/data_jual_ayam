@@ -23,11 +23,17 @@ export async function POST(request: NextRequest) {
       schema = await readFile(schemaPath, "utf-8");
     }
 
-    // Pecah menjadi statement (pisah per ';')
+// Pecah menjadi statement (pisah per ';')
+    // Buang dulu baris komentar (-- ...) agar CREATE TABLE yang didahului
+    // komentar tidak ikut terhapus saat pemisahan statement.
     const statements = schema
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("--"))
+      .join("\n")
       .split(";")
       .map((s) => s.trim())
-      .filter((s) => s.length > 0 && !s.startsWith("--"));
+      .filter((s) => s.length > 0);
 
     client = await db.connect();
     const c = client as unknown as { query: (text: string) => Promise<unknown> };

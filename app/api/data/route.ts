@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Payload tidak valid." }, { status: 400 });
     }
 
-    const data: AppDataSet = {
+const data: AppDataSet = {
       sales: body.sales ?? [],
       bakulRecords: body.bakulRecords ?? [],
       ops: body.ops ?? [],
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
       stockIn: body.stockIn ?? [],
       stockOut: body.stockOut ?? [],
       opsCategories: body.opsCategories ?? [],
+      penyusutan: body.penyusutan ?? [],
     };
 
     await saveAllData(data);

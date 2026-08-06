@@ -1,237 +1,120 @@
 "use client";
 
 import {
-  Button,
-  Chip,
-  Input,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalHeader,
-  Select,
-  SelectItem,
-  Tab,
-  Tabs,
-} from "@heroui/react";
+  SignInButton,
+  UserButton,
+  useUser,
+} from "@clerk/nextjs";
 import {
-  CheckCircle,
+  BookCopy,
+  CloudCog,
   CloudOff,
   Loader,
-  LockKeyhole,
-  LogOut,
   ShieldCheck,
-  Sparkles,
-  XCircle,
 } from "lucide-react";
-import { Key, useState } from "react";
-import { Role } from "@/types/finance";
-import { SyncStatus } from "@/lib/sync";
+import type { SyncStatus } from "@/lib/sync";
 
 interface HeaderProps {
-  stockOutCount: number;
-  role: Role;
   syncStatus: SyncStatus;
-  adminUnlocked: boolean;
-  onRoleChange: (key: Key) => void;
-  onUnlockAdmin: (password: string) => boolean;
-  onLogoutAdmin: () => void;
   selectedMonth: string;
   availableMonths: string[];
   onMonthChange: (month: string) => void;
 }
 
-const SyncIndicator = ({ status }: { status: SyncStatus }) => {
-  const styles = {
-    loading: "bg-blue-100 text-blue-800",
-    saving: "bg-blue-100 text-blue-800",
-    saved: "bg-green-100 text-green-800",
-    error: "bg-red-100 text-red-800",
-    offline: "bg-gray-200 text-gray-800",
-  };
-  const icons = {
-    loading: <Loader size={14} className="animate-spin" />,
-    saving: <Loader size={14} className="animate-spin" />,
-    saved: <CheckCircle size={14} />,
-    error: <XCircle size={14} />,
-    offline: <CloudOff size={14} />,
-  };
-  const labels = {
-    loading: "Memuat...",
-    saving: "Menyimpan...",
-    saved: "Tersimpan",
-    error: "Gagal Simpan",
-    offline: "Offline",
+function SyncStatusIndicator({ status }: { status: SyncStatus }) {
+  const indicators = {
+    loading: {
+      icon: <Loader size={14} className="animate-spin" />,
+      text: "Memuat...",
+      color: "text-[#706858]",
+    },
+    saving: {
+      icon: <CloudCog size={14} className="animate-pulse" />,
+      text: "Menyimpan...",
+      color: "text-blue-600",
+    },
+    saved: {
+      icon: <ShieldCheck size={14} />,
+      text: "Tersimpan",
+      color: "text-green-600",
+    },
+    offline: {
+      icon: <CloudOff size={14} />,
+      text: "Offline",
+      color: "text-slate-500",
+    },
+    error: {
+      icon: <CloudOff size={14} />,
+      text: "Gagal",
+      color: "text-red-600",
+    },
   };
 
+  const current = indicators[status];
+
   return (
-    <Chip
-      size="sm"
-      className={`${styles[status]} font-bold`}
-      radius="sm"
-      startContent={icons[status]}
+    <div
+      className={`hidden items-center gap-1.5 rounded-lg bg-[#f0eadb] px-3 py-2 text-xs font-bold sm:flex ${current.color}`}
     >
-      {labels[status]}
-    </Chip>
+      {current.icon}
+      <span className="hidden md:inline">{current.text}</span>
+    </div>
   );
-};
+}
 
 export function Header({
-  stockOutCount,
-  role,
   syncStatus,
-  adminUnlocked,
-  onRoleChange,
-  onUnlockAdmin,
-  onLogoutAdmin,
-  selectedMonth,
-  availableMonths,
-  onMonthChange,
 }: HeaderProps) {
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminError, setAdminError] = useState("");
-
-  const handleTabsChange = (key: Key) => {
-    const nextRole = String(key) as Role;
-    if (nextRole === "admin" && !adminUnlocked) {
-      setShowAdminModal(true);
-      setAdminError("");
-      return;
-    }
-    onRoleChange(key);
-  };
-
-  const handleAdminSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const success = onUnlockAdmin(adminPassword);
-    if (success) {
-      setShowAdminModal(false);
-      setAdminPassword("");
-      setAdminError("");
-    } else {
-      setAdminError("Password admin tidak cocok");
-    }
-  };
+  const { user } = useUser();
+  const isAdmin = user?.publicMetadata?.role === "admin";
 
   return (
-    <header className="border-b border-[#191712]/10 bg-white/80 backdrop-blur-md sticky top-0 z-40">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+    <header className="sticky top-0 z-40 w-full border-b border-[#191712]/10 bg-white/70 backdrop-blur-sm">
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#d9ff67] to-[#b3e619] shadow-sm text-[#191712]">
-            <Sparkles size={24} />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#191712]">
+            <BookCopy size={24} className="text-[#d9ff67]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-[#706858]">
-                Buku Keuangan Digital
-              </span>
-              <Chip className="bg-[#d9ff67] px-2 font-extrabold text-[#191712]" size="sm" variant="flat">
-                {stockOutCount} Transaksi
-              </Chip>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl text-[#191712]">
-Data Penjualan Ayam
+            <h1 className="text-base font-black text-[#191712]">
+              Buku Keuangan
             </h1>
+            <p className="text-xs font-medium text-[#706858]">
+              Data Penjualan Ayam
+            </p>
           </div>
         </div>
 
-<div className="flex w-full flex-wrap items-center gap-3 sm:w-auto sm:justify-end">
-          {/* Sync Status */}
-          <SyncIndicator status={syncStatus} />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <SyncStatusIndicator status={syncStatus} />
 
-          {/* Month Selector */}
-          {availableMonths.length > 0 && (
-            <div className="w-full sm:w-auto sm:min-w-[160px]">
-              <Select
-                aria-label="Pilih Periode Bulan"
-                size="sm"
-                selectedKeys={[selectedMonth]}
-                onSelectionChange={(keys) => {
-                  const val = Array.from(keys)[0];
-                  if (val) onMonthChange(String(val));
-                }}
-                className="bg-[#f7f5ef] rounded-lg font-bold"
-                radius="sm"
-              >
-                {availableMonths.map((month) => (
-                 <SelectItem key={month}>
-                    {month}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
-          )}
-{/* Role Switcher */}
-          <Tabs
-            selectedKey={role}
-            onSelectionChange={handleTabsChange}
-            radius="sm"
-            size="sm"
-            classNames={{
-              tabList: "w-full sm:w-auto bg-[#f0eadb] shadow-inner p-1",
-              cursor: "bg-[#191712] shadow-sm",
-              tabContent: "font-bold text-[#6f6758] group-data-[selected=true]:text-white",
-            }}
-          >
-            <Tab key="user" title="Mode User" />
-            <Tab
-              key="admin"
-              title={
-                <span className="flex items-center gap-1">
-                  {adminUnlocked ? <ShieldCheck size={14} /> : <LockKeyhole size={14} />}
-                  {adminUnlocked ? "Mode Admin" : "Admin Terkunci"}
+          <div className="flex items-center">
+            {!user ? (
+              <SignInButton mode="modal">
+                <button className="h-10 rounded-lg bg-[#191712] px-4 text-sm font-semibold text-white hover:bg-black">
+                  Masuk
+                </button>
+              </SignInButton>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span
+                  className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                    isAdmin
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {isAdmin ? "👑" : "👤"}
+                  <span className="hidden lg:inline">
+                    {isAdmin ? "Admin" : "Staf"}
+                  </span>
                 </span>
-              }
-            />
-          </Tabs>
-
-          {adminUnlocked && (
-            <Button
-              size="sm"
-              variant="flat"
-              radius="sm"
-              className="bg-[#ffe2d8] font-bold text-[#8f321a] hover:bg-[#ffd1c2]"
-              startContent={<LogOut size={16} />}
-              onPress={onLogoutAdmin}
-            >
-              Keluar Admin
-            </Button>
-          )}
+                <UserButton />
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Admin Unlock Modal */}
-      <Modal isOpen={showAdminModal} onClose={() => setShowAdminModal(false)} size="sm">
-        <ModalContent>
-          <ModalHeader className="flex items-center gap-2">
-            <LockKeyhole size={20} className="text-[#191712]" />
-            <span>Masukkan Password Admin</span>
-          </ModalHeader>
-          <ModalBody className="pb-6">
-            <form onSubmit={handleAdminSubmit} className="space-y-4">
-              <Input
-                type="password"
-                label="Password"
-                placeholder="Masukkan password admin..."
-                value={adminPassword}
-                onValueChange={setAdminPassword}
-                isInvalid={Boolean(adminError)}
-                errorMessage={adminError}
-                radius="sm"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <Button variant="flat" radius="sm" onPress={() => setShowAdminModal(false)}>
-                  Batal
-                </Button>
-                <Button type="submit" className="bg-[#191712] font-bold text-white" radius="sm">
-                  Buka Admin
-                </Button>
-              </div>
-            </form>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
     </header>
   );
 }

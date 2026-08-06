@@ -1,12 +1,16 @@
 import { db } from "@vercel/postgres";
 import type {
+  ActivityAction,
+  ActivityLog,
   BakulMaster,
   BakulRecord,
   DailySale,
   ItemMaster,
   OperationalRecord,
+  PenyusutanRecord,
   StockInRecord,
   StockOutRecord,
+  WeighingEntry,
 } from "@/types/finance";
 
 // === Tipe dataset lengkap ===
@@ -19,6 +23,7 @@ export type AppDataSet = {
   stockIn: StockInRecord[];
   stockOut: StockOutRecord[];
   opsCategories: string[];
+  penyusutan: PenyusutanRecord[];
 };
 
 // Helper konversi NUMERIC -> number
@@ -28,7 +33,15 @@ const num = (v: unknown): number =>
 // === Tipe baris hasil query ===
 type ItemRow = { id: string; name: string; buyPrice: number };
 type BakulMasterRow = { id: string; name: string; sellPrice: number };
-type StockInRow = { id: string; date: string; itemName: string; quantity: number; buyPrice: number };
+type StockInRow = {
+  id: string;
+  date: string;
+  itemName: string;
+  quantity: number;
+  buyPrice: number;
+  birdCount: number | null;
+  weighings: WeighingEntry[] | null;
+};
 type StockOutRow = {
   id: string;
   date: string;
@@ -38,6 +51,16 @@ type StockOutRow = {
   price: number;
   saleType: string;
   paymentMethod: string;
+  birdCount: number | null;
+  weighings: WeighingEntry[] | null;
+};
+type PenyusutanRow = {
+  id: string;
+  date: string;
+  itemName: string;
+  expectedStock: number;
+  actualStock: number;
+  amount: number;
 };
 type SaleRow = {
   date: string;
@@ -59,16 +82,17 @@ type MetaRow = { opsCategories: string[] };
 
 // === Load seluruh data dari DB ===
 export async function loadAllData(): Promise<AppDataSet> {
-  const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR] =
+const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR] =
     await Promise.all([
       db.sql`SELECT id, name, sell_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
       db.sql`SELECT id, name, address AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`,
-      db.sql`SELECT id, date, item_name AS "itemName", quantity, buy_price AS "buyPrice" FROM stock_in ORDER BY created_at ASC`,
-      db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, sale_type AS "saleType", payment_method AS "paymentMethod" FROM stock_out ORDER BY created_at ASC`,
+      db.sql`SELECT id, date, item_name AS "itemName", quantity, buy_price AS "buyPrice", bird_count AS "birdCount", weighings FROM stock_in ORDER BY created_at ASC`,
+      db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC`,
       db.sql`SELECT date, modal_qty AS "modalQty", modal_total AS "modalTotal", sale_qty AS "saleQty", sale_total AS "saleTotal", shrink, target, gross_profit AS "grossProfit", difference, operational, net_profit AS "netProfit", note FROM sales ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, name, bill, paid, balance, note FROM bakul_records ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, description, amount, note FROM ops_records ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT ops_categories AS "opsCategories" FROM app_meta WHERE id = 1`,
+      db.sql`SELECT id, date, item_name AS "itemName", expected_stock AS "expectedStock", actual_stock AS "actualStock", amount FROM penyusutan ORDER BY created_at ASC`,
     ]);
 
   const items: ItemMaster[] = (itemsR.rows as unknown as ItemRow[]).map((r) => ({
@@ -83,12 +107,14 @@ export async function loadAllData(): Promise<AppDataSet> {
     sellPrice: num(r.sellPrice),
   }));
 
-  const stockIn: StockInRecord[] = (stockInR.rows as unknown as StockInRow[]).map((r) => ({
+const stockIn: StockInRecord[] = (stockInR.rows as unknown as StockInRow[]).map((r) => ({
     id: r.id,
     date: r.date,
     itemName: r.itemName,
     quantity: num(r.quantity),
     buyPrice: num(r.buyPrice),
+    birdCount: r.birdCount != null ? num(r.birdCount) : undefined,
+    weighings: Array.isArray(r.weighings) ? r.weighings : [],
   }));
 
 const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).map((r) => ({
@@ -104,6 +130,8 @@ const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).
       : r.paymentMethod === "hutang"
       ? "hutang"
       : "cash") as "cash" | "transfer" | "hutang",
+    birdCount: r.birdCount != null ? num(r.birdCount) : undefined,
+    weighings: Array.isArray(r.weighings) ? r.weighings : [],
   }));
 
   const sales: DailySale[] = (salesR.rows as unknown as SaleRow[]).map((r) => ({
@@ -137,17 +165,26 @@ const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).
     note: r.note ?? "",
   }));
 
-  const metaRow = metaR.rows[0] as unknown as MetaRow | undefined;
+const metaRow = metaR.rows[0] as unknown as MetaRow | undefined;
   const opsCategories: string[] = Array.isArray(metaRow?.opsCategories)
     ? metaRow.opsCategories
     : [];
 
-  return { sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories };
+  const penyusutan: PenyusutanRecord[] = (penyusutanR.rows as unknown as PenyusutanRow[]).map((r) => ({
+    id: r.id,
+    date: r.date,
+    itemName: r.itemName,
+    expectedStock: num(r.expectedStock),
+    actualStock: num(r.actualStock),
+    amount: num(r.amount),
+  }));
+
+  return { sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan };
 }
 
 // === Simpan seluruh data (transaksi atomik) ===
 export async function saveAllData(data: AppDataSet): Promise<void> {
-  const {
+const {
     sales,
     bakulRecords,
     ops,
@@ -156,6 +193,7 @@ export async function saveAllData(data: AppDataSet): Promise<void> {
     stockIn,
     stockOut,
     opsCategories,
+    penyusutan,
   } = data;
 
 const client = await db.connect();
@@ -168,6 +206,7 @@ const client = await db.connect();
     await client.sql`DELETE FROM sales`;
     await client.sql`DELETE FROM bakul_records`;
     await client.sql`DELETE FROM ops_records`;
+    await client.sql`DELETE FROM penyusutan`;
 
     // Items
     for (const item of items) {
@@ -181,18 +220,18 @@ const client = await db.connect();
         INSERT INTO bakul_masters (id, name, address) VALUES (${m.id}, ${m.name}, ${String(m.sellPrice ?? 0)})
       `;
     }
-    // Stock in
+// Stock in
     for (const r of stockIn) {
       await client.sql`
-        INSERT INTO stock_in (id, date, item_name, quantity, buy_price)
-        VALUES (${r.id}, ${r.date}, ${r.itemName}, ${r.quantity}, ${r.buyPrice})
+        INSERT INTO stock_in (id, date, item_name, quantity, buy_price, bird_count, weighings)
+        VALUES (${r.id}, ${r.date}, ${r.itemName}, ${r.quantity}, ${r.buyPrice}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
     }
     // Stock out
     for (const r of stockOut) {
       await client.sql`
-        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, sale_type, payment_method)
-        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"})
+        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, sale_type, payment_method, bird_count, weighings)
+        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
     }
     // Sales
@@ -211,12 +250,19 @@ const client = await db.connect();
         VALUES (${b.date}, ${b.name}, ${b.bill}, ${b.paid}, ${b.balance}, ${b.note ?? ""}, ${i})
       `;
     }
-    // Ops records
+// Ops records
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i];
       await client.sql`
         INSERT INTO ops_records (date, description, amount, note, position)
         VALUES (${o.date}, ${o.description}, ${o.amount}, ${o.note ?? ""}, ${i})
+      `;
+    }
+    // Penyusutan
+    for (const p of penyusutan) {
+      await client.sql`
+        INSERT INTO penyusutan (id, date, item_name, expected_stock, actual_stock, amount)
+        VALUES (${p.id}, ${p.date}, ${p.itemName}, ${p.expectedStock}, ${p.actualStock}, ${p.amount})
       `;
     }
     // Meta (ops_categories JSONB)
@@ -232,6 +278,56 @@ const client = await db.connect();
   }
 }
 
+// === Tipe baris untuk activity_logs ===
+type ActivityRow = {
+  id: string;
+  action: string;
+  entity: string;
+  entity_id: string | null;
+  summary: string;
+  user_email: string | null;
+  user_name: string | null;
+  created_at: string;
+};
+
+// === Catat riwayat aktivitas (Alur Pengawasan) ===
+// Tabel ini TIDAK dihapus saat saveAllData / resetAllData,
+// sehingga riwayat audit tetap tersimpan untuk pemantauan admin.
+export async function logActivity(input: {
+  id: string;
+  action: ActivityAction;
+  entity: string;
+  entityId?: string;
+  summary: string;
+  userEmail: string;
+  userName: string;
+}): Promise<void> {
+  await db.sql`
+    INSERT INTO activity_logs (id, action, entity, entity_id, summary, user_email, user_name)
+    VALUES (${input.id}, ${input.action}, ${input.entity}, ${input.entityId ?? ""}, ${input.summary}, ${input.userEmail}, ${input.userName})
+  `;
+}
+
+// === Ambil seluruh riwayat aktivitas (terbaru dulu) ===
+export async function loadActivityLogs(): Promise<ActivityLog[]> {
+  const result = await db.sql`
+    SELECT id, action, entity, entity_id AS "entityId", summary, user_email AS "userEmail", user_name AS "userName", created_at AS "createdAt"
+    FROM activity_logs
+    ORDER BY created_at DESC
+    LIMIT 1000
+  `;
+  return (result.rows as unknown as ActivityRow[]).map((r) => ({
+    id: r.id,
+    action: (["add", "update", "delete", "reset"].includes(r.action) ? r.action : "add") as ActivityAction,
+    entity: r.entity,
+    entityId: r.entity_id ?? undefined,
+    summary: r.summary,
+    userEmail: r.user_email ?? "",
+    userName: r.user_name ?? "",
+    createdAt: r.created_at,
+  }));
+}
+
 // === Reset seluruh data ke awal kosong ===
 export async function resetAllData(): Promise<void> {
   const client = await db.connect();
@@ -243,7 +339,8 @@ export async function resetAllData(): Promise<void> {
     await client.sql`DELETE FROM stock_out`;
     await client.sql`DELETE FROM sales`;
     await client.sql`DELETE FROM bakul_records`;
-    await client.sql`DELETE FROM ops_records`;
+await client.sql`DELETE FROM ops_records`;
+    await client.sql`DELETE FROM penyusutan`;
     await client.sql`UPDATE app_meta SET ops_categories = '[]'::jsonb, updated_at = now() WHERE id = 1`;
     await client.sql`COMMIT`;
   } catch (err) {

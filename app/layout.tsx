@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ClerkProvider } from '@clerk/nextjs';
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-title: "Buku Keuangan Usaha | Data Jual Ayam",
+  title: "Buku Keuangan Usaha | Data Jual Ayam",
   description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
   openGraph: {
     title: "Buku Keuangan Usaha | Data Jual Ayam",
@@ -24,13 +25,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="light" suppressHydrationWarning>
-      <body
-        className="min-h-screen text-foreground bg-background font-sans antialiased"
-        suppressHydrationWarning
-      >
-        <Providers>{children}</Providers>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" className="light" suppressHydrationWarning>
+        <body
+          className="min-h-screen text-foreground bg-background font-sans antialiased"
+          suppressHydrationWarning
+        >
+          <Providers>{children}</Providers> {/* Keep Providers if it's still needed for other contexts */}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

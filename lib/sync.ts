@@ -4,12 +4,13 @@ import type {
   DailySale,
   ItemMaster,
   OperationalRecord,
+  PenyusutanRecord,
   StockInRecord,
   StockOutRecord,
 } from "@/types/finance";
 
 // Tipe dataset yang dikirim ke / disinkronkan dari server.
-// Catatan: `penyusutan` dan `piutangPayments` TIDAK disimpan di backend Postgres,
+// Catatan: `piutangPayments` TIDAK disimpan di backend Postgres,
 // sehingga tetap disimpan secara lokal di localStorage per perangkat.
 export type LocalDataset = {
   sales: DailySale[];
@@ -20,6 +21,7 @@ export type LocalDataset = {
   stockIn: StockInRecord[];
   stockOut: StockOutRecord[];
   opsCategories: string[];
+  penyusutan: PenyusutanRecord[];
 };
 
 export type SyncStatus =
@@ -38,6 +40,7 @@ const EMPTY: LocalDataset = {
   stockIn: [],
   stockOut: [],
   opsCategories: [],
+  penyusutan: [],
 };
 
 // Mengambil seluruh data dari endpoint server GET /api/data.
@@ -98,8 +101,9 @@ export function emptyDataset(): LocalDataset {
     items: [...EMPTY.items],
     bakulMasters: [...EMPTY.bakulMasters],
     stockIn: [...EMPTY.stockIn],
-    stockOut: [...EMPTY.stockOut],
+stockOut: [...EMPTY.stockOut],
     opsCategories: [...EMPTY.opsCategories],
+    penyusutan: [...EMPTY.penyusutan],
   };
 }
 

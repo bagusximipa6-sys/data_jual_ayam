@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Input } from "@heroui/react";
+import { SignInButton, useUser } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import {
   Boxes,
@@ -9,8 +10,9 @@ import {
   Database,
   FileBarChart,
   HandCoins,
-  Package,
+Package,
   PackagePlus,
+  ShieldCheck,
 ShoppingCart,
   Tag,
   TrendingDown,
@@ -26,6 +28,7 @@ import { Header } from "@/components/Header";
 import { MasterTab } from "@/components/MasterTab";
 import { MetricCard } from "@/components/MetricCard";
 import { OpsTab } from "@/components/OpsTab";
+import { PengawasanTab } from "@/components/PengawasanTab";
 import { PenyusutanTab } from "@/components/PenyusutanTab";
 import { StockInTab } from "@/components/StockInTab";
 import { StockOutTab } from "@/components/StockOutTab";
@@ -38,6 +41,8 @@ import {
 } from "@/lib/sync";
 import { rupiah, shortNumber, unique } from "@/lib/utils";
 import {
+  ActivityAction,
+  ActivityLog,
   BakulMaster,
   BakulRecord,
   DailySale,
@@ -60,77 +65,40 @@ import {
   initialStockOut,
 } from "./rpa-data";
 
-const SALES_KEY = "finance_book_rpa_sales_v1";
-const BAKUL_KEY = "finance_book_rpa_bakul_v1";
-const OPS_KEY = "finance_book_rpa_ops_v1";
-const ITEMS_KEY = "finance_book_rpa_items_v1";
-const BAKUL_MASTERS_KEY = "finance_book_rpa_bakul_masters_v1";
-const STOCK_IN_KEY = "finance_book_rpa_stock_in_v1";
-const STOCK_OUT_KEY = "finance_book_rpa_stock_out_v1";
-const OPS_CATEGORIES_KEY = "finance_book_rpa_ops_categories_v1";
-const PENYUSUTAN_KEY = "finance_book_rpa_penyusutan_v1";
-const ADMIN_PASSWORD = "jeko2026";
-
 const MENUS = [
   { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
   { key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: false },
   { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
   { key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
-  { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
+{ key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
   { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
   { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
   { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
+  { key: "pengawasan", label: "Alur Pengawasan", icon: ShieldCheck, adminOnly: true },
 ];
-
-function loadFromStorage<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const saved = localStorage.getItem(key);
-    return saved ? (JSON.parse(saved) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 function subscribeToClient() {
   return () => {};
 }
 
 export default function Home() {
-const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
+  const { user } = useUser();
+  const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
+  const isAdmin = user?.publicMetadata?.role === "admin";
   const [menu, setMenu] = useState("dashboard");
-  const [role, setRole] = useState<Role>("user");
-  const [adminUnlocked, setAdminUnlocked] = useState(false);
-  const isAdmin = role === "admin";
+  const role: Role = isAdmin ? "admin" : "user";
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
 
-  const [sales, setSales] = useState<DailySale[]>(() =>
-    loadFromStorage<DailySale[]>(SALES_KEY, initialSales as DailySale[])
-  );
-  const [bakulRecords, setBakulRecords] = useState<BakulRecord[]>(() =>
-    loadFromStorage<BakulRecord[]>(BAKUL_KEY, initialBakulRecords as BakulRecord[])
-  );
-  const [ops, setOps] = useState<OperationalRecord[]>(() =>
-    loadFromStorage<OperationalRecord[]>(OPS_KEY, initialOperationalRecords as OperationalRecord[])
-  );
-  const [items, setItems] = useState<ItemMaster[]>(() =>
-    loadFromStorage<ItemMaster[]>(ITEMS_KEY, initialItems as ItemMaster[])
-  );
-  const [bakulMasters, setBakulMasters] = useState<BakulMaster[]>(() =>
-    loadFromStorage<BakulMaster[]>(BAKUL_MASTERS_KEY, initialBakulMasters as BakulMaster[])
-  );
-  const [stockIn, setStockIn] = useState<StockInRecord[]>(() =>
-    loadFromStorage<StockInRecord[]>(STOCK_IN_KEY, initialStockIn as StockInRecord[])
-  );
-const [stockOut, setStockOut] = useState<StockOutRecord[]>(() =>
-    loadFromStorage<StockOutRecord[]>(STOCK_OUT_KEY, initialStockOut as StockOutRecord[])
-  );
-const [opsCategories, setOpsCategories] = useState<string[]>(() =>
-    loadFromStorage<string[]>(OPS_CATEGORIES_KEY, initialOpsCategories as string[])
-  );
-  const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(() =>
-    loadFromStorage<PenyusutanRecord[]>(PENYUSUTAN_KEY, initialPenyusutan as PenyusutanRecord[])
-  );
+const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
+  const [bakulRecords, setBakulRecords] = useState<BakulRecord[]>(initialBakulRecords as BakulRecord[]);
+  const [ops, setOps] = useState<OperationalRecord[]>(initialOperationalRecords as OperationalRecord[]);
+  const [items, setItems] = useState<ItemMaster[]>(initialItems as ItemMaster[]);
+  const [bakulMasters, setBakulMasters] = useState<BakulMaster[]>(initialBakulMasters as BakulMaster[]);
+  const [stockIn, setStockIn] = useState<StockInRecord[]>(initialStockIn as StockInRecord[]);
+  const [stockOut, setStockOut] = useState<StockOutRecord[]>(initialStockOut as StockOutRecord[]);
+const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategories as string[]);
+  const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(initialPenyusutan as PenyusutanRecord[]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [reportDate, setReportDate] = useState<string>(() => {
     const latest = [...initialStockOut]
@@ -161,12 +129,52 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
       if (data.stockIn) setStockIn(data.stockIn);
       if (data.stockOut) setStockOut(data.stockOut);
       if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
-      if (data.penyusutan) setPenyusutan(data.penyusutan);
+if (data.penyusutan) setPenyusutan(data.penyusutan);
     },
     []
   );
 
-  // This effect runs only once on the client to decide the source of truth.
+  // === Alur Pengawasan: catat setiap aksi Tambah/Edit/Hapus ke server ===
+  const userEmail = user?.primaryEmailAddress?.emailAddress ?? "";
+  const userFullName = [user?.firstName ?? "", user?.lastName ?? ""].filter(Boolean).join(" ").trim();
+  const userName = userFullName || user?.username || userEmail || "Staf";
+
+  const recordActivity = useCallback(
+    async (action: ActivityAction, entity: string, entityId: string, summary: string) => {
+      try {
+        await fetch("/api/activity", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, entity, entityId, summary }),
+        });
+      } catch {
+        // Gagal mencatat aktivitas tidak boleh menghentikan aksi utama.
+      }
+    },
+    []
+  );
+
+  const refreshActivityLogs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/activity", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { ok?: boolean; logs?: ActivityLog[] };
+      if (json.ok && Array.isArray(json.logs)) {
+        setActivityLogs(json.logs);
+      }
+    } catch {
+      // Abaikan bila gagal memuat riwayat.
+    }
+  }, []);
+
+  // Muat riwayat aktivitas saat pengguna adalah admin.
+  useEffect(() => {
+    if (isAdmin && isClient) {
+      refreshActivityLogs();
+    }
+  }, [isAdmin, isClient, refreshActivityLogs]);
+
+// This effect runs only once on the client to decide the source of truth.
   useEffect(() => {
     if (!isClient) return;
 
@@ -176,7 +184,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
 
       if (serverData === null) {
         // Network error or server issue, app is offline.
-        // Data will be loaded from localStorage by the useState initializers.
+        // Data stays at the initial (demo) state from useState initializers.
         setSyncStatus("offline");
         return;
       }
@@ -192,43 +200,31 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
           stockIn: serverData.stockIn ?? [],
           stockOut: serverData.stockOut ?? [],
           opsCategories: serverData.opsCategories ?? [],
-          penyusutan: loadFromStorage(PENYUSUTAN_KEY, initialPenyusutan),
+          penyusutan: serverData.penyusutan ?? [],
         });
         setSyncStatus("saved");
       } else {
-        // Server is empty. Check if local storage has data to push.
-        const localData: LocalDataset = {
-          sales: loadFromStorage(SALES_KEY, []),
-          bakulRecords: loadFromStorage(BAKUL_KEY, []),
-          ops: loadFromStorage(OPS_KEY, []),
-          items: loadFromStorage(ITEMS_KEY, []),
-          bakulMasters: loadFromStorage(BAKUL_MASTERS_KEY, []),
-          stockIn: loadFromStorage(STOCK_IN_KEY, []),
-          stockOut: loadFromStorage(STOCK_OUT_KEY, []),
-          opsCategories: loadFromStorage(OPS_CATEGORIES_KEY, []),
+        // Server is empty. Seed it with the initial (demo) data.
+        const demoData: LocalDataset = {
+          sales: initialSales as DailySale[],
+          bakulRecords: initialBakulRecords as BakulRecord[],
+          ops: initialOperationalRecords as OperationalRecord[],
+          items: initialItems as ItemMaster[],
+          bakulMasters: initialBakulMasters as BakulMaster[],
+          stockIn: initialStockIn as StockInRecord[],
+          stockOut: initialStockOut as StockOutRecord[],
+          opsCategories: initialOpsCategories as string[],
+          penyusutan: initialPenyusutan as PenyusutanRecord[],
         };
-
-        if (hasAnyServerData(localData)) {
-          // Local storage has data, push it to the server.
-          setSyncStatus("saving");
-          const success = await pushAllToServer(localData);
-          setSyncStatus(success ? "saved" : "error");
-        } else {
-          // Both server and local are empty. Use initial data.
-          setSyncStatus("saved");
-        }
+        setSyncStatus("saving");
+        const success = await pushAllToServer(demoData);
+        setSyncStatus(success ? "saved" : "error");
       }
     };
 
     initializeData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, handleImportData]);
-
-  // Save `penyusutan` to LocalStorage (it's not synced to the server)
-  useEffect(() => {
-    if (!isClient) return;
-    localStorage.setItem(PENYUSUTAN_KEY, JSON.stringify(penyusutan));
-  }, [penyusutan, isClient]);
 
   // This effect handles pushing data to the server whenever it changes.
   useEffect(() => {
@@ -248,6 +244,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
         stockIn,
         stockOut,
         opsCategories,
+        penyusutan,
       };
       const success = await pushAllToServer(dataset);
       setSyncStatus(success ? "saved" : "error");
@@ -257,13 +254,29 @@ const [opsCategories, setOpsCategories] = useState<string[]>(() =>
       clearTimeout(handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories]);
+  }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan]);
 
-  // User only sees unlocked menus; admin sees all menus
-  const visibleMenus = useMemo(
-    () => MENUS.filter((menu) => role === "admin" || !menu.adminOnly),
-    [role]
-  );
+// Effect to reset menu: belum login hanya dashboard, dan user non-admin
+  // tidak bisa membuka menu khusus admin.
+  useEffect(() => {
+    if (!user) {
+      if (menu !== "dashboard") setMenu("dashboard");
+      return;
+    }
+    if (role === "user") {
+      const lockedKeys = new Set(MENUS.filter((m) => m.adminOnly).map((m) => m.key));
+      if (lockedKeys.has(menu)) {
+        setMenu("dashboard");
+      }
+    }
+  }, [role, menu, user]);
+
+// User only sees unlocked menus; admin sees all menus.
+  // Belum login: hanya Laporan Harian (dashboard) yang bisa dibuka.
+  const visibleMenus = useMemo(() => {
+    if (!user) return MENUS.filter((m) => m.key === "dashboard");
+    return MENUS.filter((menu) => role === "admin" || !menu.adminOnly);
+  }, [role, user]);
 
   // Extract available months for dropdown
   const availableMonths = useMemo(() => {
@@ -356,77 +369,64 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     [opsCategories, ops]
   );
 
-  // Handlers
-  const handleUnlockAdmin = (password: string) => {
-    if (password === ADMIN_PASSWORD) {
-      setAdminUnlocked(true);
-      setRole("admin");
-      return true;
-    }
-    return false;
-  };
-
-  const handleLogoutAdmin = () => {
-    setAdminUnlocked(false);
-    setRole("user");
-    if (MENUS.some((item) => item.key === menu && item.adminOnly)) {
-      setMenu("dashboard");
-    }
-  };
-
-  const handleRoleChange = (key: Key) => {
-    const nextRole = String(key) as Role;
-    if (nextRole === "admin" && !adminUnlocked) {
-      return;
-    }
-    setRole(nextRole);
-    if (nextRole === "user" && MENUS.some((item) => item.key === menu && item.adminOnly)) {
-      setMenu("dashboard");
-    }
-  };
-
-  // CRUD Bakul
+// CRUD Bakul
   const handleAddBakul = (newRecord: BakulRecord) => {
     setBakulRecords((prev) => [newRecord, ...prev]);
+    recordActivity("add", "Piutang Bakul", "", `${newRecord.name} • ${newRecord.date}`);
   };
   const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     setBakulRecords((prev) => prev.map((item, i) => (i === index ? updatedRecord : item)));
+    recordActivity("update", "Piutang Bakul", "", `${updatedRecord.name} • ${updatedRecord.date}`);
   };
   const handleDeleteBakul = (index: number) => {
+    const deleted = bakulRecords[index];
     setBakulRecords((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Piutang Bakul", "", `${deleted.name} • ${deleted.date}`);
   };
 
   // CRUD Master Barang
   const handleAddItem = (newItem: ItemMaster) => {
     setItems((prev) => [newItem, ...prev]);
+    recordActivity("add", "Master Barang", newItem.id, newItem.name);
   };
   const handleUpdateItem = (index: number, updatedItem: ItemMaster) => {
     setItems((prev) => prev.map((item, i) => (i === index ? updatedItem : item)));
+    recordActivity("update", "Master Barang", updatedItem.id, updatedItem.name);
   };
   const handleDeleteItem = (index: number) => {
+    const deleted = items[index];
     setItems((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Master Barang", deleted.id, deleted.name);
   };
 
   // CRUD Master Pelanggan / Bakul
   const handleAddBakulMaster = (newMaster: BakulMaster) => {
     setBakulMasters((prev) => [newMaster, ...prev]);
+    recordActivity("add", "Master Bakul", newMaster.id, newMaster.name);
   };
   const handleUpdateBakulMaster = (index: number, updatedMaster: BakulMaster) => {
     setBakulMasters((prev) => prev.map((item, i) => (i === index ? updatedMaster : item)));
+    recordActivity("update", "Master Bakul", updatedMaster.id, updatedMaster.name);
   };
   const handleDeleteBakulMaster = (index: number) => {
+    const deleted = bakulMasters[index];
     setBakulMasters((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Master Bakul", deleted.id, deleted.name);
   };
 
   // CRUD Transaksi Barang Masuk
   const handleAddStockIn = (record: StockInRecord) => {
     setStockIn((prev) => [record, ...prev]);
+    recordActivity("add", "Barang Masuk", record.id, `${record.itemName} • ${record.date} (+${record.quantity} kg)`);
   };
   const handleUpdateStockIn = (index: number, record: StockInRecord) => {
     setStockIn((prev) => prev.map((item, i) => (i === index ? record : item)));
+    recordActivity("update", "Barang Masuk", record.id, `${record.itemName} • ${record.date} (+${record.quantity} kg)`);
   };
   const handleDeleteStockIn = (index: number) => {
+    const deleted = stockIn[index];
     setStockIn((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Barang Masuk", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
 
   const stockOutPiutangNote = (id: string) => `Auto dari Barang Keluar: ${id}`;
@@ -447,6 +447,7 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
   const handleAddStockOut = (record: StockOutRecord) => {
     setStockOut((prev) => [record, ...prev]);
     setBakulRecords((prev) => [stockOutToBakulRecord(record), ...prev]);
+    recordActivity("add", "Barang Keluar", record.id, `${record.itemName} • ${record.bakulName} • ${record.date} (${record.quantity} kg)`);
   };
   const handleUpdateStockOut = (index: number, record: StockOutRecord) => {
     const previousRecord = stockOut[index];
@@ -458,6 +459,7 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
       if (linkedIndex === -1) return [nextPiutang, ...prev];
       return prev.map((item, i) => (i === linkedIndex ? nextPiutang : item));
     });
+    recordActivity("update", "Barang Keluar", record.id, `${record.itemName} • ${record.bakulName} • ${record.date} (${record.quantity} kg)`);
   };
   const handleDeleteStockOut = (index: number) => {
     const deletedRecord = stockOut[index];
@@ -466,17 +468,24 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     if (deletedNote) {
       setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
     }
+    if (deletedRecord) {
+      recordActivity("delete", "Barang Keluar", deletedRecord.id, `${deletedRecord.itemName} • ${deletedRecord.bakulName} • ${deletedRecord.date}`);
+    }
   };
 
   // CRUD Biaya Operasional
   const handleAddOps = (record: OperationalRecord) => {
     setOps((prev) => [record, ...prev]);
+    recordActivity("add", "Operasional", "", `${record.description} • ${record.date}`);
   };
   const handleUpdateOps = (index: number, record: OperationalRecord) => {
     setOps((prev) => prev.map((item, i) => (i === index ? record : item)));
+    recordActivity("update", "Operasional", "", `${record.description} • ${record.date}`);
   };
   const handleDeleteOps = (index: number) => {
+    const deleted = ops[index];
     setOps((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Operasional", "", `${deleted.description} • ${deleted.date}`);
   };
 
   // CRUD Master Kategori Operasional
@@ -493,36 +502,57 @@ const handleDeleteOpsCategory = (category: string) => {
     setOpsCategories((prev) => prev.filter((c) => c !== category));
   };
 
-  // CRUD Penyusutan
+// CRUD Penyusutan
   const handleAddPenyusutan = (record: PenyusutanRecord) => {
     setPenyusutan((prev) => [record, ...prev]);
+    recordActivity("add", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
   };
   const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
     setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
+    recordActivity("update", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
   };
   const handleDeletePenyusutan = (index: number) => {
+    const deleted = penyusutan[index];
     setPenyusutan((prev) => prev.filter((_, i) => i !== index));
+    if (deleted) recordActivity("delete", "Penyusutan", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
 
-  const handleResetData = () => {
+const handleResetData = async () => {
+    setSyncStatus("saving");
+    let resetOk = false;
+    try {
+      const res = await fetch("/api/data", { method: "DELETE" });
+      const json = (await res.json()) as { ok?: boolean };
+      resetOk = json.ok === true;
+    } catch {
+      resetOk = false;
+    }
+
     setSales(initialSales as DailySale[]);
     setBakulRecords(initialBakulRecords as BakulRecord[]);
     setOps(initialOperationalRecords as OperationalRecord[]);
     setItems(initialItems as ItemMaster[]);
     setBakulMasters(initialBakulMasters as BakulMaster[]);
-setStockIn(initialStockIn as StockInRecord[]);
+    setStockIn(initialStockIn as StockInRecord[]);
     setStockOut(initialStockOut as StockOutRecord[]);
     setOpsCategories(initialOpsCategories as string[]);
     setPenyusutan(initialPenyusutan as PenyusutanRecord[]);
-    localStorage.removeItem(SALES_KEY);
-    localStorage.removeItem(BAKUL_KEY);
-    localStorage.removeItem(OPS_KEY);
-    localStorage.removeItem(ITEMS_KEY);
-    localStorage.removeItem(BAKUL_MASTERS_KEY);
-    localStorage.removeItem(STOCK_IN_KEY);
-    localStorage.removeItem(STOCK_OUT_KEY);
-    localStorage.removeItem(OPS_CATEGORIES_KEY);
-    localStorage.removeItem(PENYUSUTAN_KEY);
+
+    // Re-seed the server with the initial (demo) data.
+    const success = await pushAllToServer({
+      sales: initialSales as DailySale[],
+      bakulRecords: initialBakulRecords as BakulRecord[],
+      ops: initialOperationalRecords as OperationalRecord[],
+      items: initialItems as ItemMaster[],
+      bakulMasters: initialBakulMasters as BakulMaster[],
+      stockIn: initialStockIn as StockInRecord[],
+      stockOut: initialStockOut as StockOutRecord[],
+      opsCategories: initialOpsCategories as string[],
+      penyusutan: initialPenyusutan as PenyusutanRecord[],
+    });
+setSyncStatus(success ? "saved" : (resetOk ? "saved" : "error"));
+    recordActivity("reset", "Seluruh Data", "", "Reset data ke kondisi awal demo");
+    refreshActivityLogs();
   };
 
   if (!isClient) {
@@ -539,13 +569,7 @@ setStockIn(initialStockIn as StockInRecord[]);
     <main className="min-h-screen bg-[#f8f7f2] text-[#191712]">
       {/* Header Bar */}
       <Header
-        stockOutCount={stockOut.length}
-        role={role}
         syncStatus={syncStatus}
-        adminUnlocked={adminUnlocked}
-        onRoleChange={handleRoleChange}
-        onUnlockAdmin={handleUnlockAdmin}
-        onLogoutAdmin={handleLogoutAdmin}
         selectedMonth={selectedMonth}
         availableMonths={availableMonths}
         onMonthChange={setSelectedMonth}
@@ -606,6 +630,27 @@ setStockIn(initialStockIn as StockInRecord[]);
                   />
                 </div>
               </div>
+
+              {/* Pengingat login: user harus masuk untuk bisa input barang */}
+              {!user && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck size={22} className="shrink-0 text-amber-600" />
+                    <div>
+                      <h3 className="text-sm font-black text-[#191712]">Masuk untuk mengakses fitur Input Barang</h3>
+                      <p className="text-xs text-[#706858]">
+                        Barang Masuk, Barang Keluar, Piutang Bakul, Master, dan menu lainnya dikunci. Silakan masuk
+                        terlebih dahulu agar pengawasan berjalan lancar. Anda saat ini hanya dapat melihat Laporan Harian.
+                      </p>
+                    </div>
+                  </div>
+                  <SignInButton mode="modal">
+                    <button className="h-10 shrink-0 rounded-lg bg-[#191712] px-4 text-sm font-semibold text-white hover:bg-black">
+                      Masuk Sekarang
+                    </button>
+                  </SignInButton>
+                </div>
+              )}
 
 {/* Daily Summary Cards */}
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -892,9 +937,13 @@ bakulMasters={bakulMasters}
               onDeleteBakulMaster={handleDeleteBakulMaster}
               onAddOpsCategory={handleAddOpsCategory}
               onDeleteOpsCategory={handleDeleteOpsCategory}
-              onImportData={handleImportData}
+onImportData={handleImportData}
               onResetData={handleResetData}
             />
+          )}
+
+          {menu === "pengawasan" && (
+            <PengawasanTab logs={activityLogs} onRefresh={refreshActivityLogs} />
           )}
         </motion.div>
       </section>
