@@ -223,7 +223,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 <Scale size={14} className="text-[#706858]" />
                 <span className="text-xs font-bold text-[#191712]">Data Timbangan (kg)</span>
               </div>
-              <Textarea
+<Textarea
                 minRows={4}
                 maxRows={14}
                 labelPlacement="outside"
@@ -232,6 +232,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 onValueChange={setWeighingsInput}
                 radius="sm"
                 required
+                inputMode="decimal"
                 className="font-mono"
               />
               <p className="text-[11px] text-[#706858]">
@@ -265,12 +266,13 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
 
 <div className="space-y-1">
               <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
-              <Input
+<Input
                 labelPlacement="outside"
                 placeholder="Opsional, cth. 50"
                 value={form.birdCount}
                 onValueChange={(birdCount) => setForm((prev) => ({ ...prev, birdCount }))}
                 radius="sm"
+                inputMode="numeric"
                 endContent={<span className="text-xs font-bold text-[#706858]">ekor</span>}
               />
             </div>

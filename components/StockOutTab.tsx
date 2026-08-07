@@ -247,7 +247,7 @@ export function StockOutTab({
             <div className="flex items-center gap-1.5">
               <Scale size={14} className="text-[#706858]" />
               <span className="text-xs font-bold text-[#191712]">Data Timbangan Keluar (kg)</span>
-            </div>
+</div>
             <Textarea
               minRows={4}
               maxRows={14}
@@ -257,6 +257,7 @@ export function StockOutTab({
               onValueChange={setWeighingsInput}
               radius="sm"
               required
+              inputMode="decimal"
               className="font-mono"
             />
             <p className="text-[11px] text-[#706858]">
@@ -273,13 +274,14 @@ export function StockOutTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
+<label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
             <Input
               labelPlacement="outside"
               placeholder="Opsional, cth. 50"
               value={form.birdCount}
               onValueChange={(birdCount) => setForm((prev) => ({ ...prev, birdCount }))}
               radius="sm"
+              inputMode="numeric"
               endContent={<span className="text-xs font-bold text-[#706858]">ekor</span>}
             />
           </div>
