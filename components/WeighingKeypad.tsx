@@ -33,7 +33,7 @@ interface WeighingKeypadProps {
  * Menyediakan karakter yang tidak tersedia di keyboard HP
  * (tanda +, -, kurung (), dll) sehingga pengguna HP tetap mudah mengetik.
  */
-export function WeighingKeypad({ onAppend, onBackspace, onClear }: WeighingKeypadProps) {
+export function WeighingKeypad({ onAppend, onBackspace }: WeighingKeypadProps) {
   return (
     <div className="grid grid-cols-5 gap-1.5">
       <Key label="7" onPress={() => onAppend("7")} />
@@ -52,7 +52,6 @@ export function WeighingKeypad({ onAppend, onBackspace, onClear }: WeighingKeypa
       <Key label="." onPress={() => onAppend(".")} />
       <Key label="0" onPress={() => onAppend("0")} />
       <Key label="⌫" onPress={onBackspace} className="text-lg" />
-      <Key label="C" onPress={onClear} className="bg-[#ffe2d8] text-[#8f321a]" />
     </div>
   );
 }

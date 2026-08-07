@@ -6,7 +6,6 @@ import {
   useUser,
 } from "@clerk/nextjs";
 import {
-  BookCopy,
   CloudCog,
   CloudOff,
   Loader,
@@ -73,15 +72,20 @@ export function Header({
     <header className="sticky top-0 z-40 w-full border-b border-[#191712]/10 bg-white/70 backdrop-blur-sm">
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#191712]">
-            <BookCopy size={24} className="text-[#d9ff67]" />
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-[#191712]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg"
+              alt="Rembo Broiler"
+              className="h-full w-full object-cover"
+            />
           </div>
           <div>
             <h1 className="text-base font-black text-[#191712]">
-              Buku Keuangan
+              Rembo Broiler
             </h1>
             <p className="text-xs font-medium text-[#706858]">
-              Data Penjualan Ayam
+              Buku Keuangan
             </p>
           </div>
         </div>
