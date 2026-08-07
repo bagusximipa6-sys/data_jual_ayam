@@ -16,17 +16,18 @@ export const toNumber = (value: string | number): number => {
 
   const v = value.trim();
 
-  // Support sum expressions like "40+50+60" (Data Timbangan)
-  if (/\+/.test(v)) {
-    const parts = v.split("+");
+  // Support arithmetic expressions like "40+50-10" (Data Timbangan / keypad kalkulator).
+  // A single leading sign (e.g. "-5") is treated as a plain negative number.
+  if (/[+-]/.test(v.replace(/^[+-]/, ""))) {
+    const parts = v.split(/(?=[+-])/);
     let total = 0;
     for (const part of parts) {
-      total += toNumber(part);
+      total += toNumber(part.replace(/^\+/, ""));
     }
     return total;
   }
 
-  const fractionMatch = v.match(/^(\d+(?:[.,]\d+)?)?\s*(\d+)\s*\/\s*(\d+)$/);
+  const fractionMatch = v.replace(/^[+-]/, "").match(/^(\d+(?:[.,]\d+)?)?\s*(\d+)\s*\/\s*(\d+)$/);
   if (fractionMatch) {
     const whole = fractionMatch[1] ? parseFloat(fractionMatch[1].replace(",", ".")) : 0;
     const numer = parseInt(fractionMatch[2], 10);

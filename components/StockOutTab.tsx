@@ -17,6 +17,7 @@ import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockOutRecord } from "@/types/finance";
+import { WeighingKeypad } from "./WeighingKeypad";
 
 interface StockOutTabProps {
   stockOut: StockOutRecord[];
@@ -62,11 +63,10 @@ export function StockOutTab({
   const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
   const activeItemName = itemNames[0] || "Ayam";
 
+  // Parse Data Timbangan expression into individual weights.
+  // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
   const parseWeighingValues = (raw: string): string[] =>
-    raw
-      .split(/[+\n]/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    (raw.match(/-?\d+(?:[.,]\d+)?/g) ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
 
   const parsedWeighings = () =>
     parseWeighingValues(weighingsInput)
@@ -79,6 +79,11 @@ export function StockOutTab({
 
   const weighingCount = parseWeighingValues(weighingsInput).length;
   const totalAuto = autoPrice * weighingsTotal;
+
+  // Keypad kalkulator di layar (untuk HP yang tidak punya tombol + dan kurung)
+  const handleKeypadAppend = (char: string) => setWeighingsInput((prev) => prev + char);
+  const handleKeypadBackspace = () => setWeighingsInput((prev) => prev.slice(0, -1));
+  const handleKeypadClear = () => setWeighingsInput("");
 
   const handleStartEdit = (item: StockOutRecord, originalIndex: number) => {
     setEditingIndex(originalIndex);
@@ -247,12 +252,12 @@ export function StockOutTab({
             <div className="flex items-center gap-1.5">
               <Scale size={14} className="text-[#706858]" />
               <span className="text-xs font-bold text-[#191712]">Data Timbangan Keluar (kg)</span>
-</div>
+            </div>
             <Textarea
               minRows={4}
               maxRows={14}
               labelPlacement="outside"
-              placeholder="cth: 40+41+42+40.7"
+              placeholder="cth: (40)+(41)+(42)+(40.7)"
               value={weighingsInput}
               onValueChange={setWeighingsInput}
               radius="sm"
@@ -262,7 +267,14 @@ export function StockOutTab({
             />
             <p className="text-[11px] text-[#706858]">
               Masukkan banyak angka berat ayam dipisah tanda <strong>+</strong> atau satu angka per baris.
+              Bisa juga pakai <strong>-</strong> untuk pengurangan.
             </p>
+            {/* Keypad kalkulator: sediakan tombol +, kurung, dll yang tidak ada di keyboard HP */}
+            <WeighingKeypad
+              onAppend={handleKeypadAppend}
+              onBackspace={handleKeypadBackspace}
+              onClear={handleKeypadClear}
+            />
             {weighingsTotal > 0 && (
               <div className="flex items-center justify-between rounded-lg bg-[#d9ff67]/40 border border-[#191712]/10 px-3 py-2">
                 <span className="text-[11px] font-bold text-[#191712] uppercase">
@@ -274,7 +286,7 @@ export function StockOutTab({
           </div>
 
           <div className="space-y-1">
-<label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
+            <label className="text-xs font-semibold text-[#191712]">Jumlah Ayam (ekor)</label>
             <Input
               labelPlacement="outside"
               placeholder="Opsional, cth. 50"
@@ -459,3 +471,4 @@ export function StockOutTab({
     </div>
   );
 }
+

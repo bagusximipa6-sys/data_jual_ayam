@@ -17,6 +17,7 @@ import { AlertCircle, Edit2, Plus, Search, Scale } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { ItemMaster, Role, StockInRecord } from "@/types/finance";
+import { WeighingKeypad } from "./WeighingKeypad";
 
 interface StockInTabProps {
   stockIn: StockInRecord[];
@@ -74,13 +75,10 @@ const isAdmin = role === "admin";
     return acc;
   }, {} as Record<string, number>);
 
-  // Parse Data Timbangan expression ("40+41+42+40.7") into individual weights.
-  // Also supports newline-separated values (one per line) by treating line breaks as "+".
+  // Parse Data Timbangan expression into individual weights.
+  // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
   const parseWeighingValues = (raw: string): string[] =>
-    raw
-      .split("+")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    (raw.match(/-?\d+(?:[.,]\d+)?/g) ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
 
   const parsedWeighings = () =>
     parseWeighingValues(weighingsInput)
@@ -96,6 +94,11 @@ const isAdmin = role === "admin";
 
   const planQtyNum = toNumber(pickupPlanQty);
   const remainingQty = planQtyNum - weighingsTotal;
+
+  // Keypad kalkulator di layar (untuk HP yang tidak punya tombol + dan kurung)
+  const handleKeypadAppend = (char: string) => setWeighingsInput((prev) => prev + char);
+  const handleKeypadBackspace = () => setWeighingsInput((prev) => prev.slice(0, -1));
+  const handleKeypadClear = () => setWeighingsInput("");
 
 const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     setEditingIndex(originalIndex);
@@ -245,7 +248,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 minRows={4}
                 maxRows={14}
                 labelPlacement="outside"
-                placeholder="cth: 40+41+42+40.7"
+                placeholder="cth: (40)+(41)+(42)+(40.7)"
                 value={weighingsInput}
                 onValueChange={setWeighingsInput}
                 radius="sm"
@@ -254,9 +257,15 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 className="font-mono"
               />
               <p className="text-[11px] text-[#706858]">
-                Masukkan banyak angka berat ayam dipisah tanda <strong>+</strong> (atau satu angka per baris).
-                Total dihitung otomatis.
+                Masukkan banyak angka berat ayam dipisah tanda <strong>+</strong> atau satu angka per baris.
+                Bisa juga pakai <strong>-</strong> untuk pengurangan. Total dihitung otomatis.
               </p>
+              {/* Keypad kalkulator: sediakan tombol +, kurung, dll yang tidak ada di keyboard HP */}
+              <WeighingKeypad
+                onAppend={handleKeypadAppend}
+                onBackspace={handleKeypadBackspace}
+                onClear={handleKeypadClear}
+              />
               {weighingsTotal > 0 && (
                 <div className="flex items-center justify-between rounded-lg bg-[#d9ff67]/40 border border-[#191712]/10 px-3 py-2">
                   <span className="text-[11px] font-bold text-[#191712] uppercase">
