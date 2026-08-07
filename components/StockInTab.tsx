@@ -13,10 +13,10 @@ import {
   SelectItem,
   Textarea,
 } from "@heroui/react";
-import { AlertCircle, Edit2, Lock, Plus, Search, Scale, Trash2 } from "lucide-react";
+import { AlertCircle, Edit2, Plus, Search, Scale } from "lucide-react";
 import { useMemo, useState } from "react";
-import { rupiah, shortNumber, toNumber } from "@/lib/utils";
-import { ItemMaster, Role, StockInRecord, WeighingEntry } from "@/types/finance";
+import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { ItemMaster, Role, StockInRecord } from "@/types/finance";
 
 interface StockInTabProps {
   stockIn: StockInRecord[];
@@ -27,8 +27,6 @@ interface StockInTabProps {
   onUpdateStockIn: (index: number, record: StockInRecord) => void;
   onDeleteStockIn: (index: number) => void;
 }
-
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
 
 let stockInIdCounter = Date.now();
 const nextId = () => `SI-${++stockInIdCounter}`;
@@ -47,7 +45,7 @@ export function StockInTab({
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
 
 const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     itemName: itemNames[0] || "",
     quantity: "",
     birdCount: "",
@@ -63,19 +61,8 @@ const isAdmin = role === "admin";
 
   const autoBuyPrice = selectedItemMaster?.buyPrice ?? 0;
 
-  // Stok ditutup setiap jam 3 sore (15:00). Setelah 15:00, stok untuk hari ini dikunci
-  // dan dibuka kembali untuk hari berikutnya (reset mulai dari nol).
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const isStockClosed = currentMinutes >= 15 * 60; // 15:00 = 900 menit
-
-  const todayStr = now.toISOString().slice(0, 10);
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
-
-  // Tanggal stok aktif: hari ini sebelum 15:00, besok setelah 15:00.
-  const activeStockDate = isStockClosed ? tomorrowStr : todayStr;
+  const todayStr = getTodayDate();
+  const activeStockDate = form.date || todayStr;
 
   // "Ringkasan Stok" menampilkan stok aktif untuk periode input berjalan
   // (reset otomatis setiap periode baru — mulai dari nol).
@@ -125,7 +112,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       itemName: itemNames[0] || "",
       quantity: "",
       birdCount: "",
@@ -189,17 +176,11 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
           Catat penerimaan stok barang yang masuk ke gudang / toko.
         </p>
 
-{/* Status stok: tutup jam 3 sore, lalu otomatis pindah ke hari berikutnya */}
+{/* Status stok aktif per tanggal input */}
         <div
-          className={`mb-4 rounded-xl border px-3 py-2 text-xs font-bold ${
-            isStockClosed
-              ? "border-[#fff3cd] bg-[#fff3cd]/50 text-[#8f6b00]"
-              : "border-[#d9ff67] bg-[#d9ff67]/40 text-[#191712]"
-          }`}
+          className="mb-4 rounded-xl border border-[#d9ff67] bg-[#d9ff67]/40 px-3 py-2 text-xs font-bold text-[#191712]"
         >
-          {isStockClosed
-            ? `🔒 Stok hari ${todayStr} sudah ditutup (setelah pukul 15.00). Input stok sekarang untuk tanggal ${activeStockDate} (reset dari nol).`
-            : `🕒 Stok aktif hari ini (${todayStr}). Stok akan ditutup otomatis pukul 15.00 dan pindah ke hari berikutnya.`}
+          Stok aktif untuk tanggal {activeStockDate}. Jika belum ada input pada tanggal ini, ringkasan dimulai dari 0.
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

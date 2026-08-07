@@ -15,7 +15,7 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Search, Tag } from "lucide-react";
 import { useState } from "react";
-import { rupiah, toNumber } from "@/lib/utils";
+import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { OperationalRecord, Role } from "@/types/finance";
 
 interface OpsTabProps {
@@ -27,8 +27,6 @@ interface OpsTabProps {
   onDeleteOps: (index: number) => void;
   onAddOpsCategory?: (category: string) => void;
 }
-
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
 
 export function OpsTab({
   ops,
@@ -46,7 +44,7 @@ export function OpsTab({
   const [customCategoryInput, setCustomCategoryInput] = useState("");
 
   const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     description: categories[0] || "bensin + parkir",
     amount: "",
     note: "",
@@ -68,7 +66,7 @@ export function OpsTab({
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       description: categories[0] || "bensin + parkir",
       amount: "",
       note: "",

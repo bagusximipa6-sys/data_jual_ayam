@@ -16,7 +16,7 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { rupiah, toNumber } from "@/lib/utils";
+import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { BakulRecord, Role } from "@/types/finance";
 
 interface BakulTabProps {
@@ -27,8 +27,6 @@ interface BakulTabProps {
   onUpdateBakul: (index: number, record: BakulRecord) => void;
   onDeleteBakul: (index: number) => void;
 }
-
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
 
 export function BakulTab({
   bakulRecords,
@@ -45,7 +43,7 @@ export function BakulTab({
   const [customNameInput, setCustomNameInput] = useState("");
 
   const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     name: bakulNames[0] || "Demak",
     bill: "",
     paid: "",
@@ -71,7 +69,7 @@ export function BakulTab({
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       name: bakulNames[0] || "Demak",
       bill: "",
       paid: "",

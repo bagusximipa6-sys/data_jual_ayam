@@ -19,7 +19,6 @@ ShoppingCart,
   TrendingUp,
   Users,
 } from "lucide-react";
-import type { Key } from "react";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { BakulTab } from "@/components/BakulTab";
@@ -39,7 +38,7 @@ import {
   type LocalDataset,
   type SyncStatus,
 } from "@/lib/sync";
-import { rupiah, shortNumber, unique } from "@/lib/utils";
+import { getTodayDate, rupiah, shortNumber, unique } from "@/lib/utils";
 import {
   ActivityAction,
   ActivityLog,
@@ -101,11 +100,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [reportDate, setReportDate] = useState<string>(() => {
-    const latest = [...initialStockOut]
-      .map((r) => r.date)
-      .sort()
-      .reverse()[0];
-    return latest || new Date().toISOString().slice(0, 10);
+    return getTodayDate();
   });
 
   // JSON Import & Reset
@@ -135,10 +130,6 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
   );
 
   // === Alur Pengawasan: catat setiap aksi Tambah/Edit/Hapus ke server ===
-  const userEmail = user?.primaryEmailAddress?.emailAddress ?? "";
-  const userFullName = [user?.firstName ?? "", user?.lastName ?? ""].filter(Boolean).join(" ").trim();
-  const userName = userFullName || user?.username || userEmail || "Staf";
-
   const recordActivity = useCallback(
     async (action: ActivityAction, entity: string, entityId: string, summary: string) => {
       try {
@@ -223,7 +214,6 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
     };
 
     initializeData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, handleImportData]);
 
   // This effect handles pushing data to the server whenever it changes.
@@ -316,13 +306,13 @@ const dailyItemSummary = useMemo(() => {
     return Array.from(map.entries());
   }, [dailyRecords]);
 
-  // Sisa stok = total stok masuk − total stok keluar (kumulatif s.d. tanggal laporan)
+  // Sisa stok harian = stok masuk tanggal laporan - stok keluar tanggal laporan.
   const dailyStockRemaining = useMemo(() => {
     const stockInTotal = stockIn
-      .filter((r) => r.date <= reportDate)
+      .filter((r) => r.date === reportDate)
       .reduce((sum, r) => sum + r.quantity, 0);
     const stockOutTotal = stockOut
-      .filter((r) => r.date <= reportDate)
+      .filter((r) => r.date === reportDate)
       .reduce((sum, r) => sum + r.quantity, 0);
     return stockInTotal - stockOutTotal;
   }, [stockIn, stockOut, reportDate]);

@@ -14,7 +14,7 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { DailySale, Role } from "@/types/finance";
 
 interface SalesTabProps {
@@ -25,15 +25,13 @@ interface SalesTabProps {
   onDeleteSale: (index: number) => void;
 }
 
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
-
 export function SalesTab({ sales, role, onAddSale, onUpdateSale, onDeleteSale }: SalesTabProps) {
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
 
   const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     modalQty: "",
     modalTotal: "",
     saleQty: "",
@@ -70,7 +68,7 @@ export function SalesTab({ sales, role, onAddSale, onUpdateSale, onDeleteSale }:
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       modalQty: "",
       modalTotal: "",
       saleQty: "",

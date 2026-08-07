@@ -14,7 +14,7 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Lock, Plus, Scale, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { PenyusutanRecord, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 
 interface PenyusutanTabProps {
@@ -27,8 +27,6 @@ interface PenyusutanTabProps {
   onUpdatePenyusutan: (index: number, record: PenyusutanRecord) => void;
   onDeletePenyusutan: (index: number) => void;
 }
-
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
 
 let penyusutanIdCounter = Date.now();
 const nextId = () => `PY-${++penyusutanIdCounter}`;
@@ -48,7 +46,7 @@ export function PenyusutanTab({
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
 
   const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     itemName: itemNames[0] || "",
     actualStock: "",
   });
@@ -59,10 +57,10 @@ export function PenyusutanTab({
   const expectedStockFor = (date: string, itemName: string) => {
     const key = itemName.toLowerCase();
     const inTotal = stockIn
-      .filter((r) => r.itemName.toLowerCase() === key && r.date <= date)
+      .filter((r) => r.itemName.toLowerCase() === key && r.date === date)
       .reduce((sum, r) => sum + r.quantity, 0);
     const outTotal = stockOut
-      .filter((r) => r.itemName.toLowerCase() === key && r.date <= date)
+      .filter((r) => r.itemName.toLowerCase() === key && r.date === date)
       .reduce((sum, r) => sum + r.quantity, 0);
     return inTotal - outTotal;
   };
@@ -83,7 +81,7 @@ export function PenyusutanTab({
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       itemName: itemNames[0] || "",
       actualStock: "",
     });

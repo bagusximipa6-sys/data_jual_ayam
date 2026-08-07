@@ -327,28 +327,41 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   doc.setDrawColor(180);
   doc.line(14, 30, 196, 30);
 
-  // Summary block
-  let y = 36;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("Ringkasan", 14, y);
-  y += 6;
-  const lines: Array<[string, string]> = [
+  // Summary block with background
+  const summaryStartX = 14;
+  const summaryWidth = 182;
+  let y = 38;
+
+  const summaryLines: Array<[string, string, string?]> = [
     ["Total Barang Keluar", `${shortNumber(summary.totalQuantity)} kg`],
     ["Total Omzet / Penjualan", rupiah(summary.totalOmzet)],
     ["Total Modal (Harga Beli)", rupiah(summary.totalModal)],
     ["Total Laba Kotor", rupiah(summary.totalProfit)],
     ["Biaya Operasional", rupiah(summary.totalOperational)],
     ["Laba Bersih", rupiah(summary.netProfit)],
-    ["Penjualan Eceran", `${shortNumber(summary.saleBreakdown.eceranQty)} kg • ${rupiah(summary.saleBreakdown.eceranOmzet)}`],
-    ["Penjualan Grosir", `${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`],
+    [
+      "Laba Bersih Final",
+      rupiah(summary.netProfitAfterPenyusutan),
+      summary.netProfitAfterPenyusutan >= 0 ? "#1f8f5f" : "#8f321a",
+    ],
   ];
-  doc.setFont("helvetica", "normal");
+
+  const summaryBlockHeight = 8 + summaryLines.length * 7 + 5;
+  doc.setFillColor(247, 245, 239); // Light beige background
+  doc.roundedRect(summaryStartX, y - 5, summaryWidth, summaryBlockHeight, 3, 3, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Ringkasan Keuangan", summaryStartX + 5, y);
+  y += 8;
+
   doc.setFontSize(10);
-  lines.forEach(([label, value]) => {
-    doc.text(label, 16, y);
-    doc.text(value, 130, y);
-    y += 5.5;
+  summaryLines.forEach(([label, value]) => {
+    doc.setFont("helvetica", "normal");
+    doc.text(label, summaryStartX + 5, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(value, summaryStartX + summaryWidth - 5, y, { align: "right" });
+    y += 7;
   });
 
   // Monthly table
@@ -533,16 +546,11 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
           </div>
 
           {/* Payment Method Breakdown */}
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <SummaryCard
-              label="Penjualan Eceran"
-              value={`${shortNumber(summary.saleBreakdown.eceranQty)} kg • ${rupiah(summary.saleBreakdown.eceranOmzet)}`}
+              label="Total Penjualan (Eceran & Grosir)"
+              value={`${shortNumber(summary.totalQuantity)} kg • ${rupiah(summary.totalOmzet)}`}
               tone="blue"
-            />
-<SummaryCard
-              label="Penjualan Grosir"
-              value={`${shortNumber(summary.saleBreakdown.grosirQty)} kg • ${rupiah(summary.saleBreakdown.grosirOmzet)}`}
-              tone="purple"
             />
           </div>
 

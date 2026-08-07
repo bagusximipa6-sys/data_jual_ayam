@@ -15,7 +15,7 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockOutRecord } from "@/types/finance";
 
 interface StockOutTabProps {
@@ -28,8 +28,6 @@ interface StockOutTabProps {
   onUpdateStockOut: (index: number, record: StockOutRecord) => void;
   onDeleteStockOut: (index: number) => void;
 }
-
-const DEFAULT_DATE = new Date().toISOString().slice(0, 10);
 
 let stockOutIdCounter = Date.now();
 const nextId = () => `SO-${++stockOutIdCounter}`;
@@ -50,7 +48,7 @@ export function StockOutTab({
   const isAdmin = role === "admin";
 
   const [form, setForm] = useState({
-    date: DEFAULT_DATE,
+    date: getTodayDate(),
     bakulName: bakulNames[0] || "",
     birdCount: "",
   });
@@ -100,7 +98,7 @@ export function StockOutTab({
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setForm({
-      date: DEFAULT_DATE,
+      date: getTodayDate(),
       bakulName: bakulNames[0] || "",
       birdCount: "",
     });
@@ -147,7 +145,9 @@ export function StockOutTab({
       );
     });
 
-  const stockOutTotals = stockOut.reduce((acc, item) => {
+  const activeStockOutDate = form.date || getTodayDate();
+  const activeStockOut = stockOut.filter((item) => item.date === activeStockOutDate);
+  const stockOutTotals = activeStockOut.reduce((acc, item) => {
     const key = item.itemName.toLowerCase();
     acc[key] = (acc[key] || 0) + item.quantity;
     return acc;
@@ -333,7 +333,10 @@ export function StockOutTab({
         </div>
 
         <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
-          <h3 className="text-xs font-bold text-[#706858] uppercase mb-2">Total Barang Keluar</h3>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-bold text-[#706858] uppercase">Total Barang Keluar</h3>
+            <span className="text-[10px] font-bold text-[#706858]">{activeStockOutDate}</span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(stockOutTotals).map(([key, qty]) => (
               <span
@@ -344,7 +347,7 @@ export function StockOutTab({
               </span>
             ))}
             {Object.keys(stockOutTotals).length === 0 && (
-              <span className="text-xs text-[#706858]">Belum ada penjualan tercatat.</span>
+              <span className="text-xs text-[#706858]">Belum ada penjualan tercatat untuk {activeStockOutDate}.</span>
             )}
           </div>
         </div>
