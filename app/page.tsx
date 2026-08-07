@@ -65,15 +65,15 @@ import {
 } from "./rpa-data";
 
 const MENUS = [
-  { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, adminOnly: false },
-  { key: "stockin", label: "Barang Masuk", icon: PackagePlus, adminOnly: false },
-  { key: "stockout", label: "Barang Keluar", icon: Package, adminOnly: false },
-  { key: "ops", label: "Operasional", icon: HandCoins, adminOnly: true },
-{ key: "penyusutan", label: "Penyusutan", icon: TrendingDown, adminOnly: true },
-  { key: "bakul", label: "Piutang Bakul", icon: Users, adminOnly: false },
-  { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, adminOnly: true },
-  { key: "master", label: "Master & Cadangan", icon: Database, adminOnly: false },
-  { key: "pengawasan", label: "Alur Pengawasan", icon: ShieldCheck, adminOnly: true },
+  { key: "dashboard", label: "Laporan Harian", icon: ClipboardList, roles: ["user", "staf", "admin"] },
+  { key: "stockin", label: "Barang Masuk", icon: PackagePlus, roles: ["user", "staf", "admin"] },
+  { key: "stockout", label: "Barang Keluar", icon: Package, roles: ["user", "staf", "admin"] },
+  { key: "ops", label: "Operasional", icon: HandCoins, roles: ["staf", "admin"] },
+  { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, roles: ["admin"] },
+  { key: "bakul", label: "Piutang Bakul", icon: Users, roles: ["user", "staf", "admin"] },
+  { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, roles: ["admin"] },
+  { key: "master", label: "Master & Cadangan", icon: Database, roles: ["user", "staf", "admin"] },
+  { key: "pengawasan", label: "Alur Pengawasan", icon: ShieldCheck, roles: ["admin"] },
 ];
 
 function subscribeToClient() {
@@ -85,7 +85,12 @@ export default function Home() {
   const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
   const isAdmin = user?.publicMetadata?.role === "admin";
   const [menu, setMenu] = useState("dashboard");
-  const role: Role = isAdmin ? "admin" : "user";
+  const role: Role =
+    user?.publicMetadata?.role === "admin"
+      ? "admin"
+      : user?.publicMetadata?.role === "staf"
+        ? "staf"
+        : "user";
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
 
 const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
@@ -247,25 +252,23 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
   }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan]);
 
 // Effect to reset menu: belum login hanya dashboard, dan user non-admin
-  // tidak bisa membuka menu khusus admin.
+  // tidak bisa membuka menu yang tidak sesuai dengan role-nya.
   useEffect(() => {
     if (!user) {
       if (menu !== "dashboard") setMenu("dashboard");
       return;
     }
-    if (role === "user") {
-      const lockedKeys = new Set(MENUS.filter((m) => m.adminOnly).map((m) => m.key));
-      if (lockedKeys.has(menu)) {
-        setMenu("dashboard");
-      }
+    const menuRoles = MENUS.find((m) => m.key === menu)?.roles ?? [];
+    if (!menuRoles.includes(role)) {
+      setMenu("dashboard");
     }
   }, [role, menu, user]);
 
-// User only sees unlocked menus; admin sees all menus.
+// User hanya melihat menu yang diizinkan sesuai role-nya.
   // Belum login: hanya Laporan Harian (dashboard) yang bisa dibuka.
   const visibleMenus = useMemo(() => {
     if (!user) return MENUS.filter((m) => m.key === "dashboard");
-    return MENUS.filter((menu) => role === "admin" || !menu.adminOnly);
+    return MENUS.filter((menu) => menu.roles.includes(role));
   }, [role, user]);
 
   // Extract available months for dropdown

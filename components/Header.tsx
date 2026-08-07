@@ -67,6 +67,7 @@ export function Header({
 }: HeaderProps) {
   const { user } = useUser();
   const isAdmin = user?.publicMetadata?.role === "admin";
+  const isStafOperasional = user?.publicMetadata?.role === "staf";
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#191712]/10 bg-white/70 backdrop-blur-sm">
@@ -101,12 +102,14 @@ export function Header({
                   className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
                     isAdmin
                       ? "bg-amber-100 text-amber-800"
-                      : "bg-gray-100 text-gray-700"
+                      : isStafOperasional
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-100 text-gray-700"
                   }`}
                 >
-                  {isAdmin ? "👑" : "👤"}
+                  {isAdmin ? "👑" : isStafOperasional ? "🛠️" : "👤"}
                   <span className="hidden lg:inline">
-                    {isAdmin ? "Admin" : "Staf"}
+                    {isAdmin ? "Admin" : isStafOperasional ? "Staf Operasional" : "Staf"}
                   </span>
                 </span>
                 <UserButton />

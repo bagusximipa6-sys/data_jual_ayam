@@ -100,7 +100,7 @@ export type PiutangPayment = {
   note: string;
 };
 
-export type Role = "user" | "admin";
+export type Role = "user" | "staf" | "admin";
 
 export type FinanceSummary = {
   modal: number;

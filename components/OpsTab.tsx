@@ -43,6 +43,9 @@ export function OpsTab({
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryInput, setCustomCategoryInput] = useState("");
 
+  // Staf Operasional & Admin dapat mengelola data operasional.
+  const canManageOps = role === "admin" || role === "staf";
+
   const [form, setForm] = useState({
     date: getTodayDate(),
     description: categories[0] || "bensin + parkir",
@@ -118,8 +121,8 @@ const handleSubmit = (e: React.FormEvent) => {
     <div className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
       {/* Form Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6">
-        <h2 className="text-xl font-black text-[#191712]">
-          {role === "admin"
+<h2 className="text-xl font-black text-[#191712]">
+          {canManageOps
             ? editingIndex === null
               ? "Input Biaya Operasional"
               : "Edit Biaya Operasional"
@@ -129,7 +132,7 @@ const handleSubmit = (e: React.FormEvent) => {
           Catat pengeluaran operasional usaha seperti bahan bakar, parkir, konsumsi, atau perawatan.
         </p>
 
-        {role === "admin" ? (
+        {canManageOps ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               type="date"
@@ -231,8 +234,8 @@ const handleSubmit = (e: React.FormEvent) => {
         )}
       </div>
 
-{/* Data List Panel */}
-      {role === "admin" && (
+      {/* Data List Panel */}
+      {canManageOps && (
         <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-xl font-black text-[#191712]">Rincian Operasional</h2>
@@ -272,7 +275,7 @@ const handleSubmit = (e: React.FormEvent) => {
                     </div>
                     <div className="flex items-center gap-4 justify-between sm:justify-end">
                       <span className="font-mono font-black text-[#8f321a]">{rupiah(item.amount)}</span>
-                      {role === "admin" && (
+                      {canManageOps && (
                         <div className="flex gap-1">
                           <Button
                             size="sm"

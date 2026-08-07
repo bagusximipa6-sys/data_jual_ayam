@@ -51,6 +51,7 @@ const [form, setForm] = useState({
     birdCount: "",
   });
   const [weighingsInput, setWeighingsInput] = useState("");
+  const [pickupPlanQty, setPickupPlanQty] = useState("");
 
 const isAdmin = role === "admin";
 
@@ -93,6 +94,9 @@ const isAdmin = role === "admin";
 
   const weighingCount = parseWeighingValues(weighingsInput).length;
 
+  const planQtyNum = toNumber(pickupPlanQty);
+  const remainingQty = planQtyNum - weighingsTotal;
+
 const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     setEditingIndex(originalIndex);
     setForm({
@@ -118,6 +122,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
       birdCount: "",
     });
     setWeighingsInput("");
+    setPickupPlanQty("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -217,6 +222,19 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
               )}
             </div>
 
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[#191712]">Rencana Pengambilan (kg)</label>
+              <Input
+                labelPlacement="outside"
+                placeholder="Opsional, cth. 1000"
+                value={pickupPlanQty}
+                onValueChange={setPickupPlanQty}
+                radius="sm"
+                inputMode="decimal"
+                endContent={<span className="text-xs font-bold text-[#706858]">kg</span>}
+              />
+            </div>
+
             {/* Data Timbangan */}
             <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3 space-y-2">
               <div className="flex items-center gap-1.5">
@@ -245,6 +263,18 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                     Total dari {weighingCount} timbangan
                   </span>
                   <span className="font-mono font-black text-[#1f8f5f]">{shortNumber(weighingsTotal)} kg</span>
+                </div>
+              )}
+              {planQtyNum > 0 && weighingsTotal > 0 && (
+                <div className="flex items-center justify-between rounded-lg bg-blue-100/60 border border-blue-200 px-3 py-2">
+                  <span className="text-[11px] font-bold text-blue-800 uppercase">
+                    Sisa dari Rencana ({shortNumber(planQtyNum)} kg)
+                  </span>
+                  <span
+                    className={`font-mono font-black ${remainingQty > 0 ? "text-amber-700" : "text-green-700"}`}
+                  >
+                    {remainingQty > 0 ? `Kurang ${shortNumber(remainingQty)} kg` : `Lebih ${shortNumber(Math.abs(remainingQty))} kg`}
+                  </span>
                 </div>
               )}
             </div>
