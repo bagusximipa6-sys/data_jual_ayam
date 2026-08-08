@@ -18,6 +18,12 @@ import { useState } from "react";
 import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { OperationalRecord, Role } from "@/types/finance";
 
+// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
 interface OpsTabProps {
   ops: OperationalRecord[];
   categories: string[];
@@ -270,7 +276,8 @@ const handleSubmit = (e: React.FormEvent) => {
                     <div>
                       <h3 className="font-black text-[#191712] capitalize">{item.description}</h3>
                       <p className="text-xs text-[#706858] font-medium">
-                        {item.date} {item.note ? `• ${item.note}` : ""}
+                        {item.date} {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
+                        {!isRecordLocked(item.date) && item.note ? `• ${item.note}` : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-4 justify-between sm:justify-end">
@@ -281,15 +288,17 @@ const handleSubmit = (e: React.FormEvent) => {
                             size="sm"
                             variant="flat"
                             className="font-bold min-w-unit-12"
+                            isDisabled={isRecordLocked(item.date)}
                             onPress={() => handleStartEdit(item, originalIndex)}
                             radius="sm"
                           >
-                            Edit
+                            {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
                           </Button>
                           <Button
                             size="sm"
                             variant="flat"
                             className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                            isDisabled={isRecordLocked(item.date)}
                             onPress={() => setDeleteConfirmIndex(originalIndex)}
                             radius="sm"
                           >

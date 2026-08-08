@@ -5,6 +5,7 @@ import type {
   ItemMaster,
   OperationalRecord,
   PenyusutanRecord,
+  PriceHistory,
   StockInRecord,
   StockOutRecord,
 } from "@/types/finance";
@@ -22,6 +23,7 @@ export type LocalDataset = {
   stockOut: StockOutRecord[];
   opsCategories: string[];
   penyusutan: PenyusutanRecord[];
+  priceHistory: PriceHistory[];
 };
 
 export type SyncStatus =
@@ -41,6 +43,7 @@ const EMPTY: LocalDataset = {
   stockOut: [],
   opsCategories: [],
   penyusutan: [],
+  priceHistory: [],
 };
 
 // Mengambil seluruh data dari endpoint server GET /api/data.
@@ -104,6 +107,7 @@ export function emptyDataset(): LocalDataset {
 stockOut: [...EMPTY.stockOut],
     opsCategories: [...EMPTY.opsCategories],
     penyusutan: [...EMPTY.penyusutan],
+    priceHistory: [...EMPTY.priceHistory],
   };
 }
 

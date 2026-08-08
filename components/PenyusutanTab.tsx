@@ -17,6 +17,12 @@ import { useState } from "react";
 import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { PenyusutanRecord, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 
+// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
 interface PenyusutanTabProps {
   penyusutan: PenyusutanRecord[];
   stockIn: StockInRecord[];
@@ -278,10 +284,10 @@ export function PenyusutanTab({
                 >
                   <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h3 className="font-black text-[#191712]">{item.itemName}</h3>
+<h3 className="font-black text-[#191712]">{item.itemName}</h3>
                       <p className="text-xs text-[#706858] font-medium">
-                        {item.date} • Stok seharusnya {shortNumber(item.expectedStock)} kg • Aktual{" "}
-                        {shortNumber(item.actualStock)} kg
+                        {item.date} {isRecordLocked(item.date) ? "🔒 Terkunci" : ""} • Stok seharusnya{" "}
+                        {shortNumber(item.expectedStock)} kg • Aktual {shortNumber(item.actualStock)} kg
                       </p>
                     </div>
                     <div className="flex items-center gap-4 justify-between sm:justify-end">
@@ -292,15 +298,17 @@ export function PenyusutanTab({
                             size="sm"
                             variant="flat"
                             className="font-bold min-w-unit-12"
+                            isDisabled={isRecordLocked(item.date)}
                             onPress={() => handleStartEdit(item, originalIndex)}
                             radius="sm"
                           >
-                            Edit
+                            {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
                           </Button>
                           <Button
                             size="sm"
                             variant="flat"
                             className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                            isDisabled={isRecordLocked(item.date)}
                             onPress={() => setDeleteConfirmIndex(originalIndex)}
                             radius="sm"
                           >

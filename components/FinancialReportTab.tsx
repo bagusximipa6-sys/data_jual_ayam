@@ -86,18 +86,46 @@ const dummyPaymentBreakdown = {
   hutangCount: 0,
 };
 
+// Resolver harga beli yang sadar-tanggal (date-aware).
+// Menghindari bug di mana transaksi lama ikut berubah saat harga master barang di-edit:
+// harga beli transaksi diambil dari snapshot Barang Masuk yang berlaku PADA/BELUM melampaui
+// tanggal transaksi tersebut, sehingga laporan lama memakai harga yang benar saat itu —
+// bukan harga terbaru yang di-edit belakangan.
+const buildBuyPriceResolver = (stockIn: StockInRecord[]) => {
+  // Map: itemName(lowercase) -> daftar {date, buyPrice} terurut menaik berdasarkan tanggal.
+  const byItem = new Map<string, Array<{ date: string; buyPrice: number }>>();
+  for (const record of stockIn) {
+    const key = record.itemName.toLowerCase();
+    if (!byItem.has(key)) byItem.set(key, []);
+    byItem.get(key)!.push({ date: record.date, buyPrice: record.buyPrice });
+  }
+  for (const list of byItem.values()) {
+    list.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // Ambil harga beli yang berlaku pada tanggal tertentu (entri terakhir dgn date <= onDate).
+  const resolve = (itemName: string, onDate: string): number | null => {
+    const list = byItem.get(itemName.toLowerCase());
+    if (!list || list.length === 0) return null;
+    let price: number | null = null;
+    for (const entry of list) {
+      if (entry.date <= onDate) price = entry.buyPrice;
+      else break;
+    }
+    return price;
+  };
+
+  return resolve;
+};
+
 const buildProfitLoss = (
   stockOut: StockOutRecord[],
   stockIn: StockInRecord[],
   ops: OperationalRecord[],
   penyusutan: PenyusutanRecord[] = []
 ): ProfitLossSummary => {
-  // Map item name -> buyPrice from latest Barang Masuk (stock in) record
-  const buyPriceMap = new Map<string, number>();
-  const sortedStockIn = [...stockIn].sort((a, b) => a.date.localeCompare(b.date));
-  for (const record of sortedStockIn) {
-    buyPriceMap.set(record.itemName.toLowerCase(), record.buyPrice);
-  }
+  // Resolver harga beli per-tanggal berdasarkan snapshot Barang Masuk.
+  const resolveBuyPrice = buildBuyPriceResolver(stockIn);
 
   // Map operational expenses by date
   const opsByDate = new Map<string, number>();
@@ -108,15 +136,21 @@ const buildProfitLoss = (
   // Build daily items from each StockOut record
   const dailyMap = new Map<string, ProfitLossSummary["daily"][number]>();
   const totalPenyusutanValue = penyusutan.reduce((sum, r) => {
-    // Use the buy price from the date of the shrinkage, or the latest available if not found
-    const buyPrice = buyPriceMap.get(r.itemName.toLowerCase()) ?? 0;
+    // Gunakan harga beli yang berlaku PADA tanggal penyusutan (per-tanggal, bukan harga terbaru).
+    const buyPrice = resolveBuyPrice(r.itemName, r.date) ?? 0;
     return sum + r.amount * buyPrice;
   }, 0);
 
   const sorted = [...stockOut].sort((a, b) => a.date.localeCompare(b.date));
 
   for (const record of sorted) {
-    const buyPrice = buyPriceMap.get(record.itemName.toLowerCase()) ?? 0;
+    // Prioritas: snapshot Harga Beli yang tersimpan pada transaksi Barang Keluar (harga terkunci),
+    // lalu fallback ke harga Barang Masuk yang berlaku pada tanggal transaksi (date-aware).
+    // Dengan ini, transaksi lama TIDAK ikut memakai harga master yang baru di-edit.
+    const buyPrice =
+      record.buyPrice != null && record.buyPrice > 0
+        ? record.buyPrice
+        : (resolveBuyPrice(record.itemName, record.date) ?? 0);
     const omzet = record.quantity * record.price;
     const modalCost = record.quantity * buyPrice;
     const profit = omzet - modalCost;
@@ -747,10 +781,12 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
 
       <div className="flex items-start gap-2 rounded-2xl border border-[#191712]/10 bg-white p-4 text-xs text-[#706858]">
         <Download size={15} className="mt-0.5 shrink-0" />
-        <p>
+<p>
 <strong>Rumus:</strong> Pendapatan Harian = (Total Stok Keluar × Harga Jual) − (Total Stok Keluar × Harga
-          Beli). Harga Beli diambil dari transaksi Barang Masuk terakhir untuk barang tersebut; jika belum ada data
-          Barang Masuk, modal dihitung Rp0.
+          Beli). Harga Beli diambil dari snapshot yang tersimpan pada transaksi Barang Keluar; jika tidak ada,
+          dipakai harga Barang Masuk yang berlaku pada tanggal transaksi tersebut (date-aware), sehingga mengubah
+          harga di Master Barang TIDAK mengubah laporan periode lampau. Jika belum ada data Barang Masuk, modal
+          dihitung Rp0.
         </p>
       </div>
     </div>

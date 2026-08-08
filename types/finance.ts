@@ -35,6 +35,16 @@ export type ItemMaster = {
   buyPrice: number;
 };
 
+// Riwayat Harga per barang, berbasis tanggal efektif (ISO YYYY-MM-DD).
+// Setiap perubahan harga MENAMBAH entri baru; tidak pernah meng-update entri lama.
+export type PriceHistory = {
+  id: string;
+  itemId: string;
+  buyPrice: number;
+  sellPrice: number;
+  effectiveAt: string; // ISO date YYYY-MM-DD
+};
+
 export type BakulMaster = {
   id: string;
   name: string;
@@ -73,6 +83,7 @@ export type StockOutRecord = {
   itemName: string;
   quantity: number;
   price: number;
+  buyPrice?: number; // snapshot harga beli pada tanggal transaksi (Price History)
   saleType?: "eceran" | "grosir";
   paymentMethod?: "cash" | "transfer" | "hutang";
   weighings?: WeighingEntry[];

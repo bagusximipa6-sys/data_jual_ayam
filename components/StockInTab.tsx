@@ -19,6 +19,12 @@ import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { ItemMaster, Role, StockInRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
 
+// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
 interface StockInTabProps {
   stockIn: StockInRecord[];
   itemNames: string[];
@@ -44,6 +50,8 @@ export function StockInTab({
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  // Tanggal terpilih untuk melihat Riwayat Barang Masuk (seperti Laporan Harian).
+  const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
 
 const [form, setForm] = useState({
     date: getTodayDate(),
@@ -63,17 +71,8 @@ const isAdmin = role === "admin";
 
   const autoBuyPrice = selectedItemMaster?.buyPrice ?? 0;
 
-  const todayStr = getTodayDate();
+const todayStr = getTodayDate();
   const activeStockDate = form.date || todayStr;
-
-  // "Ringkasan Stok" menampilkan stok aktif untuk periode input berjalan
-  // (reset otomatis setiap periode baru — mulai dari nol).
-  const activeStock = stockIn.filter((r) => r.date === activeStockDate);
-  const activeStockBalances = activeStock.reduce((acc, item) => {
-    const key = item.itemName.toLowerCase();
-    acc[key] = (acc[key] || 0) + item.quantity;
-    return acc;
-  }, {} as Record<string, number>);
 
   // Parse Data Timbangan expression into individual weights.
   // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
@@ -155,7 +154,9 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     handleCancelEdit();
   };
 
+  // Riwayat disaring berdasarkan tanggal terpilih (historyDate), dikombinasikan dengan pencarian teks.
   const filteredRecords = stockIn
+    .filter((item) => item.date === historyDate)
     .map((item, originalIndex) => ({ item, originalIndex }))
     .filter(({ item }) => {
       if (!search.trim()) return true;
@@ -166,12 +167,14 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
       );
     });
 
-  // Calculate stock balances per item
-  const stockBalances = stockIn.reduce((acc, item) => {
-    const key = item.itemName.toLowerCase();
-    acc[key] = (acc[key] || 0) + item.quantity;
-    return acc;
-  }, {} as Record<string, number>);
+// Total barang masuk per tanggal terpilih
+  const historyBalances = stockIn
+    .filter((item) => item.date === historyDate)
+    .reduce((acc, item) => {
+      const key = item.itemName.toLowerCase();
+      acc[key] = (acc[key] || 0) + item.quantity;
+      return acc;
+    }, {} as Record<string, number>);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
@@ -336,12 +339,22 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
 
       {/* Data List Panel — visible to all users */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-black text-[#191712]">Riwayat Barang Masuk</h2>
-          <div className="w-full sm:w-64">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              size="sm"
+              className="w-full sm:w-[180px]"
+              value={historyDate}
+              onValueChange={setHistoryDate}
+              aria-label="Pilih Tanggal Riwayat"
+              radius="sm"
+            />
             <Input
               size="sm"
-              placeholder="Cari barang/tanggal..."
+              className="w-full sm:w-56"
+              placeholder="Cari barang..."
               value={search}
               onValueChange={setSearch}
               startContent={<Search size={14} className="text-[#706858]" />}
@@ -352,14 +365,14 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
           </div>
         </div>
 
-{/* Stock Balance Summary (hanya stok aktif — reset otomatis tiap periode baru) */}
+{/* Total Barang Masuk per tanggal terpilih */}
         <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-bold text-[#706858] uppercase">Ringkasan Stok Aktif</h3>
-            <span className="text-[10px] font-bold text-[#706858]">{activeStockDate}</span>
+            <h3 className="text-xs font-bold text-[#706858] uppercase">Total Barang Masuk</h3>
+            <span className="text-[10px] font-bold text-[#706858]">{historyDate}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(activeStockBalances).map(([key, qty]) => (
+            {Object.entries(historyBalances).map(([key, qty]) => (
               <span
                 key={key}
                 className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold border border-[#191712]/10"
@@ -367,8 +380,8 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                 {key.charAt(0).toUpperCase() + key.slice(1)}: {shortNumber(qty)} kg
               </span>
             ))}
-            {Object.keys(activeStockBalances).length === 0 && (
-              <span className="text-xs text-[#706858]">Belum ada stok tercatat untuk {activeStockDate}.</span>
+            {Object.keys(historyBalances).length === 0 && (
+              <span className="text-xs text-[#706858]">Belum ada stok tercatat untuk {historyDate}.</span>
             )}
           </div>
         </div>
@@ -391,9 +404,10 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                     <h3 className="font-black text-[#191712]">{item.itemName}</h3>
 <p className="text-xs text-[#706858] font-medium">
                       {item.date}
-                      {item.birdCount != null && item.birdCount > 0 && ` • ${item.birdCount} ekor`}
+                      {isRecordLocked(item.date) && " 🔒 Terkunci"}
+                      {!isRecordLocked(item.date) && item.birdCount != null && item.birdCount > 0 && ` • ${item.birdCount} ekor`}
                     </p>
-                    {item.weighings && item.weighings.length > 0 && (
+                    {!isRecordLocked(item.date) && item.weighings && item.weighings.length > 0 && (
                       <p className="text-[11px] text-[#706858] font-mono mt-1">
                         Timbangan: {item.weighings.map((w) => shortNumber(toNumber(String(w.weight)))).join(" + ")}
                       </p>
@@ -406,15 +420,17 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                         size="sm"
                         variant="flat"
                         className="font-bold min-w-unit-12"
+                        isDisabled={isRecordLocked(item.date)}
                         onPress={() => handleStartEdit(item, originalIndex)}
                         radius="sm"
                       >
-                        Edit
+                        {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
                       </Button>
                       <Button
                         size="sm"
                         variant="flat"
                         className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                        isDisabled={isRecordLocked(item.date)}
                         onPress={() => setDeleteConfirmIndex(originalIndex)}
                         radius="sm"
                       >

@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS stock_out (
   item_name TEXT NOT NULL,
   quantity NUMERIC NOT NULL DEFAULT 0,
   price NUMERIC NOT NULL DEFAULT 0,
+  buy_price NUMERIC NOT NULL DEFAULT 0,
   sale_type TEXT DEFAULT 'eceran',
   payment_method TEXT DEFAULT 'cash',
   bird_count NUMERIC,
@@ -53,6 +54,22 @@ CREATE TABLE IF NOT EXISTS stock_out (
 -- Kolom tambahan untuk stock_out (idempotent untuk migrasi berulang)
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0;
+
+-- Tabel: Riwayat Harga (Price History)
+-- Mencatat setiap perubahan harga beli & jual per barang, berbasis tanggal efektif (ISO YYYY-MM-DD).
+-- Jangan pernah UPDATE baris lama saat harga berubah; cukup INSERT entri baru.
+CREATE TABLE IF NOT EXISTS price_history (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  buy_price NUMERIC NOT NULL DEFAULT 0,
+  sell_price NUMERIC NOT NULL DEFAULT 0,
+  effective_at TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history (item_id);
+CREATE INDEX IF NOT EXISTS idx_price_history_effective ON price_history (effective_at);
 
 -- Tabel: Laporan Harian (Sales)
 CREATE TABLE IF NOT EXISTS sales (

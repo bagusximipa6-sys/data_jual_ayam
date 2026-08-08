@@ -19,6 +19,12 @@ import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockOutRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
 
+// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
 interface StockOutTabProps {
   stockOut: StockOutRecord[];
   itemNames: string[];
@@ -46,6 +52,8 @@ export function StockOutTab({
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  // Tanggal terpilih untuk melihat Riwayat Barang Keluar (seperti Laporan Harian).
+  const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
   const isAdmin = role === "admin";
 
   const [form, setForm] = useState({
@@ -138,7 +146,9 @@ export function StockOutTab({
     handleCancelEdit();
   };
 
+  // Riwayat disaring berdasarkan tanggal terpilih (historyDate), dikombinasikan dengan pencarian teks.
   const filteredRecords = stockOut
+    .filter((item) => item.date === historyDate)
     .map((item, originalIndex) => ({ item, originalIndex }))
     .filter(({ item }) => {
       if (!search.trim()) return true;
@@ -150,13 +160,14 @@ export function StockOutTab({
       );
     });
 
-  const activeStockOutDate = form.date || getTodayDate();
-  const activeStockOut = stockOut.filter((item) => item.date === activeStockOutDate);
-  const stockOutTotals = activeStockOut.reduce((acc, item) => {
-    const key = item.itemName.toLowerCase();
-    acc[key] = (acc[key] || 0) + item.quantity;
-    return acc;
-  }, {} as Record<string, number>);
+  // Total barang keluar per tanggal terpilih
+  const historyTotals = stockOut
+    .filter((item) => item.date === historyDate)
+    .reduce((acc, item) => {
+      const key = item.itemName.toLowerCase();
+      acc[key] = (acc[key] || 0) + item.quantity;
+      return acc;
+    }, {} as Record<string, number>);
 
   const handlePrintReceipt = (record: StockOutRecord) => {
     const total = record.quantity * record.price;
@@ -332,10 +343,20 @@ export function StockOutTab({
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-black text-[#191712]">Riwayat Barang Keluar</h2>
-          <div className="w-full sm:w-64">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              size="sm"
+              className="w-full sm:w-[180px]"
+              value={historyDate}
+              onValueChange={setHistoryDate}
+              aria-label="Pilih Tanggal Riwayat"
+              radius="sm"
+            />
             <Input
               size="sm"
-              placeholder="Cari barang/bakul/tanggal..."
+              className="w-full sm:w-56"
+              placeholder="Cari barang/bakul..."
               value={search}
               onValueChange={setSearch}
               startContent={<Search size={14} className="text-[#706858]" />}
@@ -349,10 +370,10 @@ export function StockOutTab({
         <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-bold text-[#706858] uppercase">Total Barang Keluar</h3>
-            <span className="text-[10px] font-bold text-[#706858]">{activeStockOutDate}</span>
+            <span className="text-[10px] font-bold text-[#706858]">{historyDate}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(stockOutTotals).map(([key, qty]) => (
+            {Object.entries(historyTotals).map(([key, qty]) => (
               <span
                 key={key}
                 className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold border border-[#191712]/10"
@@ -360,8 +381,8 @@ export function StockOutTab({
                 {key.charAt(0).toUpperCase() + key.slice(1)}: {shortNumber(qty)} kg
               </span>
             ))}
-            {Object.keys(stockOutTotals).length === 0 && (
-              <span className="text-xs text-[#706858]">Belum ada penjualan tercatat untuk {activeStockOutDate}.</span>
+            {Object.keys(historyTotals).length === 0 && (
+              <span className="text-xs text-[#706858]">Belum ada penjualan tercatat untuk {historyDate}.</span>
             )}
           </div>
         </div>
@@ -382,9 +403,10 @@ export function StockOutTab({
                 <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-black text-[#191712]">{item.itemName}</h3>
-                    <p className="text-xs text-[#706858] font-medium">
-                      {item.date} - {item.bakulName}{" "}
-                      {item.birdCount != null && item.birdCount > 0 && `• ${item.birdCount} ekor`}
+<p className="text-xs text-[#706858] font-medium">
+                      {item.date} - {item.bakulName}
+                      {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
+                      {!isRecordLocked(item.date) && item.birdCount != null && item.birdCount > 0 && `• ${item.birdCount} ekor`}
                     </p>
                     {isAdmin && (
                       <p className="mt-1 text-[10px] text-[#706858] font-medium">
@@ -414,15 +436,17 @@ export function StockOutTab({
                         size="sm"
                         variant="flat"
                         className="font-bold min-w-unit-12"
+                        isDisabled={isRecordLocked(item.date)}
                         onPress={() => handleStartEdit(item, originalIndex)}
                         radius="sm"
                       >
-                        Edit
+                        {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
                       </Button>
                       <Button
                         size="sm"
                         variant="flat"
                         className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
+                        isDisabled={isRecordLocked(item.date)}
                         onPress={() => setDeleteConfirmIndex(originalIndex)}
                         radius="sm"
                       >

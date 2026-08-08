@@ -48,6 +48,7 @@ import {
   ItemMaster,
   OperationalRecord,
   PenyusutanRecord,
+  PriceHistory,
   Role,
   StockInRecord,
   StockOutRecord,
@@ -59,6 +60,7 @@ import {
   initialOperationalRecords,
   initialOpsCategories,
   initialPenyusutan,
+  initialPriceHistory,
   initialSales,
   initialStockIn,
   initialStockOut,
@@ -79,6 +81,31 @@ const MENUS = [
 function subscribeToClient() {
   return () => {};
 }
+
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+// Penguncian Harian (Daily Lock):
+// - Tanggal hari ini (todayISO) masih bisa diedit.
+// - Tanggal yang lebih kecil dari hari ini terkunci permanen (read-only).
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
+// Ambil harga aktif dari riwayat harga (priceHistory) pada tanggal transaksi.
+// Logika: pilih entri dengan effectiveAt <= tanggalTransaksi yang paling akhir (terbaru).
+const resolveActivePrice = (
+  priceHistory: PriceHistory[],
+  itemId: string,
+  onDate: string
+): { buyPrice: number; sellPrice: number } | null => {
+  const matches = priceHistory
+    .filter((ph) => ph.itemId === itemId && ph.effectiveAt <= onDate)
+    .sort((a, b) => (a.effectiveAt < b.effectiveAt ? -1 : a.effectiveAt > b.effectiveAt ? 1 : 0));
+  const latest = matches[matches.length - 1];
+  if (!latest) return null;
+  return { buyPrice: latest.buyPrice, sellPrice: latest.sellPrice };
+};
 
 export default function Home() {
   const { user } = useUser();
@@ -102,6 +129,7 @@ const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
   const [stockOut, setStockOut] = useState<StockOutRecord[]>(initialStockOut as StockOutRecord[]);
 const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategories as string[]);
   const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(initialPenyusutan as PenyusutanRecord[]);
+  const [priceHistory, setPriceHistory] = useState<PriceHistory[]>(initialPriceHistory as PriceHistory[]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [reportDate, setReportDate] = useState<string>(() => {
@@ -120,6 +148,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
       stockOut?: StockOutRecord[];
       opsCategories?: string[];
       penyusutan?: PenyusutanRecord[];
+      priceHistory?: PriceHistory[];
     }) => {
       setSales(data.sales);
       setBakulRecords(data.bakulRecords);
@@ -130,6 +159,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
       if (data.stockOut) setStockOut(data.stockOut);
       if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
 if (data.penyusutan) setPenyusutan(data.penyusutan);
+      if (data.priceHistory) setPriceHistory(data.priceHistory);
     },
     []
   );
@@ -187,7 +217,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
 
       if (hasAnyServerData(serverData)) {
         // Server has data, this is the source of truth.
-        handleImportData({
+handleImportData({
           sales: serverData.sales ?? [],
           bakulRecords: serverData.bakulRecords ?? [],
           ops: serverData.ops ?? [],
@@ -197,6 +227,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
           stockOut: serverData.stockOut ?? [],
           opsCategories: serverData.opsCategories ?? [],
           penyusutan: serverData.penyusutan ?? [],
+          priceHistory: serverData.priceHistory ?? [],
         });
         setSyncStatus("saved");
       } else {
@@ -211,6 +242,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
           stockOut: initialStockOut as StockOutRecord[],
           opsCategories: initialOpsCategories as string[],
           penyusutan: initialPenyusutan as PenyusutanRecord[],
+          priceHistory: initialPriceHistory as PriceHistory[],
         };
         setSyncStatus("saving");
         const success = await pushAllToServer(demoData);
@@ -228,7 +260,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
       return;
     }
 
-    const handler = setTimeout(async () => {
+const handler = setTimeout(async () => {
       setSyncStatus("saving");
       const dataset: LocalDataset = {
         sales,
@@ -240,6 +272,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
         stockOut,
         opsCategories,
         penyusutan,
+        priceHistory,
       };
       const success = await pushAllToServer(dataset);
       setSyncStatus(success ? "saved" : "error");
@@ -249,7 +282,7 @@ if (data.penyusutan) setPenyusutan(data.penyusutan);
       clearTimeout(handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan]);
+  }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan, priceHistory]);
 
 // Effect to reset menu: belum login hanya dashboard, dan user non-admin
   // tidak bisa membuka menu yang tidak sesuai dengan role-nya.
@@ -367,12 +400,14 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     setBakulRecords((prev) => [newRecord, ...prev]);
     recordActivity("add", "Piutang Bakul", "", `${newRecord.name} • ${newRecord.date}`);
   };
-  const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
+const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
+    if (isRecordLocked(bakulRecords[index]?.date ?? updatedRecord.date)) return;
     setBakulRecords((prev) => prev.map((item, i) => (i === index ? updatedRecord : item)));
     recordActivity("update", "Piutang Bakul", "", `${updatedRecord.name} • ${updatedRecord.date}`);
   };
   const handleDeleteBakul = (index: number) => {
     const deleted = bakulRecords[index];
+    if (!deleted || isRecordLocked(deleted.date)) return;
     setBakulRecords((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Piutang Bakul", "", `${deleted.name} • ${deleted.date}`);
   };
@@ -380,10 +415,20 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
   // CRUD Master Barang
   const handleAddItem = (newItem: ItemMaster) => {
     setItems((prev) => [newItem, ...prev]);
+    // Riwayat Harga: selalu tambahkan entri baru (bukan UPDATE) dengan tanggal hari ini.
+    setPriceHistory((prev) => [
+      ...prev,
+      { id: uid(), itemId: newItem.id, buyPrice: newItem.buyPrice, sellPrice: 0, effectiveAt: getTodayDate() },
+    ]);
     recordActivity("add", "Master Barang", newItem.id, newItem.name);
   };
   const handleUpdateItem = (index: number, updatedItem: ItemMaster) => {
     setItems((prev) => prev.map((item, i) => (i === index ? updatedItem : item)));
+    // Riwayat Harga: tambahkan entri baru untuk harga beli terbaru.
+    setPriceHistory((prev) => [
+      ...prev,
+      { id: uid(), itemId: updatedItem.id, buyPrice: updatedItem.buyPrice, sellPrice: 0, effectiveAt: getTodayDate() },
+    ]);
     recordActivity("update", "Master Barang", updatedItem.id, updatedItem.name);
   };
   const handleDeleteItem = (index: number) => {
@@ -399,6 +444,14 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
   };
   const handleUpdateBakulMaster = (index: number, updatedMaster: BakulMaster) => {
     setBakulMasters((prev) => prev.map((item, i) => (i === index ? updatedMaster : item)));
+    // Riwayat Harga: catat harga jual baru pada tanggal hari ini.
+    const newSellPrice = updatedMaster.sellPrice;
+    if (newSellPrice != null && newSellPrice > 0) {
+      setPriceHistory((prev) => [
+        ...prev,
+        { id: uid(), itemId: updatedMaster.id, buyPrice: 0, sellPrice: newSellPrice, effectiveAt: getTodayDate() },
+      ]);
+    }
     recordActivity("update", "Master Bakul", updatedMaster.id, updatedMaster.name);
   };
   const handleDeleteBakulMaster = (index: number) => {
@@ -409,15 +462,29 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
 
   // CRUD Transaksi Barang Masuk
   const handleAddStockIn = (record: StockInRecord) => {
-    setStockIn((prev) => [record, ...prev]);
-    recordActivity("add", "Barang Masuk", record.id, `${record.itemName} • ${record.date} (+${record.quantity} kg)`);
+    // Snapshot Harga Beli dari riwayat harga yang berlaku pada tanggal transaksi.
+    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
+    const active = itemMaster
+      ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
+      : null;
+    const snapshot = { ...record, buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? record.buyPrice) };
+    setStockIn((prev) => [snapshot, ...prev]);
+    recordActivity("add", "Barang Masuk", snapshot.id, `${snapshot.itemName} • ${snapshot.date} (+${snapshot.quantity} kg)`);
   };
   const handleUpdateStockIn = (index: number, record: StockInRecord) => {
-    setStockIn((prev) => prev.map((item, i) => (i === index ? record : item)));
-    recordActivity("update", "Barang Masuk", record.id, `${record.itemName} • ${record.date} (+${record.quantity} kg)`);
+    if (isRecordLocked(stockIn[index]?.date ?? record.date)) return;
+    // Snapshot ulang harga beli yang berlaku pada tanggal transaksi.
+    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
+    const active = itemMaster
+      ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
+      : null;
+    const snapshot = { ...record, buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? record.buyPrice) };
+    setStockIn((prev) => prev.map((item, i) => (i === index ? snapshot : item)));
+    recordActivity("update", "Barang Masuk", snapshot.id, `${snapshot.itemName} • ${snapshot.date} (+${snapshot.quantity} kg)`);
   };
   const handleDeleteStockIn = (index: number) => {
     const deleted = stockIn[index];
+    if (!deleted || isRecordLocked(deleted.date)) return;
     setStockIn((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Barang Masuk", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
@@ -438,32 +505,51 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
 
 // CRUD Transaksi Barang Keluar / Penjualan
   const handleAddStockOut = (record: StockOutRecord) => {
-    setStockOut((prev) => [record, ...prev]);
-    setBakulRecords((prev) => [stockOutToBakulRecord(record), ...prev]);
-    recordActivity("add", "Barang Keluar", record.id, `${record.itemName} • ${record.bakulName} • ${record.date} (${record.quantity} kg)`);
+    // Snapshot harga beli + harga jual dari riwayat harga yang berlaku pada tanggal transaksi.
+    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
+    const active = itemMaster
+      ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
+      : null;
+    const snapshot: StockOutRecord = {
+      ...record,
+      buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? 0),
+      price: active && active.sellPrice > 0 ? active.sellPrice : record.price,
+    };
+    setStockOut((prev) => [snapshot, ...prev]);
+    setBakulRecords((prev) => [stockOutToBakulRecord(snapshot), ...prev]);
+    recordActivity("add", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
   };
   const handleUpdateStockOut = (index: number, record: StockOutRecord) => {
+    if (isRecordLocked(stockOut[index]?.date ?? record.date)) return;
     const previousRecord = stockOut[index];
     const previousNote = previousRecord ? stockOutPiutangNote(previousRecord.id) : stockOutPiutangNote(record.id);
-    const nextPiutang = stockOutToBakulRecord(record);
-    setStockOut((prev) => prev.map((item, i) => (i === index ? record : item)));
+    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
+    const active = itemMaster
+      ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
+      : null;
+    const snapshot: StockOutRecord = {
+      ...record,
+      buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? 0),
+      price: active && active.sellPrice > 0 ? active.sellPrice : record.price,
+    };
+    const nextPiutang = stockOutToBakulRecord(snapshot);
+    setStockOut((prev) => prev.map((item, i) => (i === index ? snapshot : item)));
     setBakulRecords((prev) => {
       const linkedIndex = prev.findIndex((item) => item.note === previousNote);
       if (linkedIndex === -1) return [nextPiutang, ...prev];
       return prev.map((item, i) => (i === linkedIndex ? nextPiutang : item));
     });
-    recordActivity("update", "Barang Keluar", record.id, `${record.itemName} • ${record.bakulName} • ${record.date} (${record.quantity} kg)`);
+    recordActivity("update", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
   };
   const handleDeleteStockOut = (index: number) => {
     const deletedRecord = stockOut[index];
-    const deletedNote = deletedRecord ? stockOutPiutangNote(deletedRecord.id) : "";
+    if (!deletedRecord || isRecordLocked(deletedRecord.date)) return;
+    const deletedNote = stockOutPiutangNote(deletedRecord.id);
     setStockOut((prev) => prev.filter((_, i) => i !== index));
     if (deletedNote) {
       setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
     }
-    if (deletedRecord) {
-      recordActivity("delete", "Barang Keluar", deletedRecord.id, `${deletedRecord.itemName} • ${deletedRecord.bakulName} • ${deletedRecord.date}`);
-    }
+    recordActivity("delete", "Barang Keluar", deletedRecord.id, `${deletedRecord.itemName} • ${deletedRecord.bakulName} • ${deletedRecord.date}`);
   };
 
   // CRUD Biaya Operasional
@@ -472,11 +558,13 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     recordActivity("add", "Operasional", "", `${record.description} • ${record.date}`);
   };
   const handleUpdateOps = (index: number, record: OperationalRecord) => {
+    if (isRecordLocked(ops[index]?.date ?? record.date)) return;
     setOps((prev) => prev.map((item, i) => (i === index ? record : item)));
     recordActivity("update", "Operasional", "", `${record.description} • ${record.date}`);
   };
   const handleDeleteOps = (index: number) => {
     const deleted = ops[index];
+    if (!deleted || isRecordLocked(deleted.date)) return;
     setOps((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Operasional", "", `${deleted.description} • ${deleted.date}`);
   };
@@ -500,12 +588,14 @@ const handleDeleteOpsCategory = (category: string) => {
     setPenyusutan((prev) => [record, ...prev]);
     recordActivity("add", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
   };
-  const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
+const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
+    if (isRecordLocked(penyusutan[index]?.date ?? record.date)) return;
     setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
     recordActivity("update", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
   };
   const handleDeletePenyusutan = (index: number) => {
     const deleted = penyusutan[index];
+    if (!deleted || isRecordLocked(deleted.date)) return;
     setPenyusutan((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Penyusutan", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
@@ -530,6 +620,7 @@ const handleResetData = async () => {
     setStockOut(initialStockOut as StockOutRecord[]);
     setOpsCategories(initialOpsCategories as string[]);
     setPenyusutan(initialPenyusutan as PenyusutanRecord[]);
+    setPriceHistory(initialPriceHistory as PriceHistory[]);
 
     // Re-seed the server with the initial (demo) data.
     const success = await pushAllToServer({
@@ -542,6 +633,7 @@ const handleResetData = async () => {
       stockOut: initialStockOut as StockOutRecord[],
       opsCategories: initialOpsCategories as string[],
       penyusutan: initialPenyusutan as PenyusutanRecord[],
+      priceHistory: initialPriceHistory as PriceHistory[],
     });
 setSyncStatus(success ? "saved" : (resetOk ? "saved" : "error"));
     recordActivity("reset", "Seluruh Data", "", "Reset data ke kondisi awal demo");

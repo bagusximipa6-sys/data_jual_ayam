@@ -19,6 +19,12 @@ import { useState } from "react";
 import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { BakulRecord, Role } from "@/types/finance";
 
+// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
+const isRecordLocked = (date: string): boolean => {
+  const today = getTodayDate();
+  return typeof date === "string" && date.length >= 10 && date < today;
+};
+
 interface BakulTabProps {
   bakulRecords: BakulRecord[];
   bakulNames: string[];
@@ -292,10 +298,11 @@ export function BakulTab({
                 >
                   <CardBody className="gap-3 p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
+<div>
                         <h3 className="font-black text-base text-[#191712]">{item.name}</h3>
                         <p className="text-xs text-[#706858] font-medium">
-                          {item.date} {item.note ? `• ${item.note}` : ""}
+                          {item.date} {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
+                          {!isRecordLocked(item.date) && item.note ? `• ${item.note}` : ""}
                         </p>
                       </div>
                       <div className="text-left sm:text-right">
@@ -342,16 +349,18 @@ export function BakulTab({
                           size="sm"
                           variant="flat"
                           className="font-bold"
+                          isDisabled={isRecordLocked(item.date)}
                           onPress={() => handleStartEdit(item, originalIndex)}
                           radius="sm"
-                          startContent={<Edit2 size={14} />}
+                          startContent={isRecordLocked(item.date) ? undefined : <Edit2 size={14} />}
                         >
-                          Edit
+                          {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
                         </Button>
                         <Button
                           size="sm"
                           variant="flat"
                           className="bg-[#ffe2d8] font-bold text-[#8f321a] hover:bg-[#ffd1c2]"
+                          isDisabled={isRecordLocked(item.date)}
                           startContent={<Trash2 size={14} />}
                           onPress={() => setDeleteConfirmIndex(originalIndex)}
                           radius="sm"

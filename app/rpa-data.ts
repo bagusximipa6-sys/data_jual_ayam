@@ -6,6 +6,7 @@
   OperationalRecord,
   PenyusutanRecord,
   PiutangPayment,
+  PriceHistory,
   StockInRecord,
   StockOutRecord,
 } from "@/types/finance";
@@ -29,3 +30,5 @@ export const initialStockOut: StockOutRecord[] = [];
 export const initialPiutangPayments: PiutangPayment[] = [];
 
 export const initialPenyusutan: PenyusutanRecord[] = [];
+
+export const initialPriceHistory: PriceHistory[] = [];
