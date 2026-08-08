@@ -88,15 +88,8 @@ const data: AppDataSet = {
       );
     }
 
-    // 4) Piutang Bakul: pastikan record tanggal lampau tidak berubah.
-    const currentPastBakul = current.bakulRecords.filter((r) => isLockedDate(r.date));
-    const incomingPastBakul = data.bakulRecords.filter((r) => isLockedDate(r.date));
-    if (sign(incomingPastBakul as unknown as Array<Record<string, unknown>>) !== sign(currentPastBakul as unknown as Array<Record<string, unknown>>)) {
-      return NextResponse.json(
-        { ok: false, error: "Ditolak: data Piutang Bakul pada tanggal lampau terkunci. Hanya tanggal hari ini yang dapat diedit." },
-        { status: 403 }
-      );
-    }
+// 4) Piutang Bakul: sengaja TIDAK dikunci (daily lock dimatikan)
+    //    agar pengguna dapat menambah/mengubah/menghapus piutang pada tanggal hari sebelumnya.
 
     // 5) Penyusutan: pastikan record tanggal lampau tidak berubah.
     const currentPastPenyusutan = current.penyusutan.filter((r) => isLockedDate(r.date));

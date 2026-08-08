@@ -401,13 +401,12 @@ const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), 
     recordActivity("add", "Piutang Bakul", "", `${newRecord.name} • ${newRecord.date}`);
   };
 const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
-    if (isRecordLocked(bakulRecords[index]?.date ?? updatedRecord.date)) return;
     setBakulRecords((prev) => prev.map((item, i) => (i === index ? updatedRecord : item)));
     recordActivity("update", "Piutang Bakul", "", `${updatedRecord.name} • ${updatedRecord.date}`);
   };
   const handleDeleteBakul = (index: number) => {
     const deleted = bakulRecords[index];
-    if (!deleted || isRecordLocked(deleted.date)) return;
+    if (!deleted) return;
     setBakulRecords((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Piutang Bakul", "", `${deleted.name} • ${deleted.date}`);
   };

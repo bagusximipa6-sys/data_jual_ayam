@@ -56,3 +56,6 @@ build-output*.log
 dev-server.log
 dev.log
 build.log
+
+.vercel
+.env*.local

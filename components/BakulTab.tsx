@@ -19,12 +19,6 @@ import { useState } from "react";
 import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { BakulRecord, Role } from "@/types/finance";
 
-// Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
-const isRecordLocked = (date: string): boolean => {
-  const today = getTodayDate();
-  return typeof date === "string" && date.length >= 10 && date < today;
-};
-
 interface BakulTabProps {
   bakulRecords: BakulRecord[];
   bakulNames: string[];
@@ -42,11 +36,13 @@ export function BakulTab({
   onUpdateBakul,
   onDeleteBakul,
 }: BakulTabProps) {
-  const [search, setSearch] = useState("");
+const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
   const [isCustomName, setIsCustomName] = useState(false);
   const [customNameInput, setCustomNameInput] = useState("");
+  // Tanggal terpilih untuk melihat Riwayat Piutang (seperti Laporan Harian).
+  const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
 
   const [form, setForm] = useState({
     date: getTodayDate(),
@@ -108,8 +104,9 @@ export function BakulTab({
     handleCancelEdit();
   };
 
-  // Search filter
+// Riwayat disaring berdasarkan tanggal terpilih (historyDate), dikombinasikan dengan pencarian teks.
   const filteredRecords = bakulRecords
+    .filter((item) => item.date === historyDate)
     .map((item, originalIndex) => ({ item, originalIndex }))
     .filter(({ item }) => {
       if (!search.trim()) return true;
@@ -263,10 +260,20 @@ export function BakulTab({
       {/* Data List Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-black text-[#191712]">Catatan Piutang Bakul</h2>
-          <div className="w-full sm:w-64">
+<h2 className="text-xl font-black text-[#191712]">Catatan Piutang Bakul</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              size="sm"
+              className="w-full sm:w-[180px]"
+              value={historyDate}
+              onValueChange={setHistoryDate}
+              aria-label="Pilih Tanggal Riwayat"
+              radius="sm"
+            />
             <Input
               size="sm"
+              className="w-full sm:w-56"
               placeholder="Cari nama/tanggal..."
               value={search}
               onValueChange={setSearch}
@@ -301,8 +308,7 @@ export function BakulTab({
 <div>
                         <h3 className="font-black text-base text-[#191712]">{item.name}</h3>
                         <p className="text-xs text-[#706858] font-medium">
-                          {item.date} {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
-                          {!isRecordLocked(item.date) && item.note ? `• ${item.note}` : ""}
+                          {item.date} {item.note ? `• ${item.note}` : ""}
                         </p>
                       </div>
                       <div className="text-left sm:text-right">
@@ -349,18 +355,16 @@ export function BakulTab({
                           size="sm"
                           variant="flat"
                           className="font-bold"
-                          isDisabled={isRecordLocked(item.date)}
                           onPress={() => handleStartEdit(item, originalIndex)}
                           radius="sm"
-                          startContent={isRecordLocked(item.date) ? undefined : <Edit2 size={14} />}
+                          startContent={<Edit2 size={14} />}
                         >
-                          {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
+                          Edit
                         </Button>
                         <Button
                           size="sm"
                           variant="flat"
                           className="bg-[#ffe2d8] font-bold text-[#8f321a] hover:bg-[#ffd1c2]"
-                          isDisabled={isRecordLocked(item.date)}
                           startContent={<Trash2 size={14} />}
                           onPress={() => setDeleteConfirmIndex(originalIndex)}
                           radius="sm"
