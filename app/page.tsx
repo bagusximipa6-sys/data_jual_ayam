@@ -191,20 +191,29 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
     []
   );
 
-  // === Alur Pengawasan: catat setiap aksi Tambah/Edit/Hapus ke server ===
+// === Alur Pengawasan: catat setiap aksi Tambah/Edit/Hapus ke server ===
+  // Sertakan identitas user yang sedang login (dari Clerk) sebagai fallback
+  // saat identitas server-side tidak tersedia di endpoint /api/activity.
   const recordActivity = useCallback(
     async (action: ActivityAction, entity: string, entityId: string, summary: string) => {
       try {
+        const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? "";
+        const userEmail =
+          user?.emailAddresses?.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ??
+          primaryEmail;
+        const fullName = [user?.firstName ?? "", user?.lastName ?? ""].filter(Boolean).join(" ").trim();
+        const userName = fullName || user?.username || userEmail || "";
+
         await fetch("/api/activity", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, entity, entityId, summary }),
+          body: JSON.stringify({ action, entity, entityId, summary, userEmail, userName }),
         });
       } catch {
         // Gagal mencatat aktivitas tidak boleh menghentikan aksi utama.
       }
     },
-    []
+    [user]
   );
 
   const refreshActivityLogs = useCallback(async () => {

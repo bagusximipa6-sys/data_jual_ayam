@@ -40,22 +40,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Tidak terautentikasi." }, { status: 401 });
     }
 
-    // Ambil identitas user dari Clerk (email & nama) secara server-side,
-    // sehingga tidak bisa dipalsukan dari client.
-    const client = await clerkClient();
-    const user = await client.users.getUser(userId);
-    const primaryEmail = user.primaryEmailAddress?.emailAddress ?? "";
-    const email = user.emailAddresses
-      ?.find((e) => e.id === user.primaryEmailAddressId)
-      ?.emailAddress ?? primaryEmail;
-    const fullName = [user.firstName ?? "", user.lastName ?? ""].filter(Boolean).join(" ").trim();
-    const userName = fullName || user.username || email || "Staf";
+// Ambil identitas user dari Clerk (email & nama) secara server-side,
+    // sehingga sumber utama identitas tidak bisa dipalsukan dari client.
+    let serverEmail = "";
+    let serverName = "";
+    try {
+      const client = await clerkClient();
+      const user = await client.users.getUser(userId);
+      const primaryEmail = user.primaryEmailAddress?.emailAddress ?? "";
+      serverEmail = user.emailAddresses
+        ?.find((e) => e.id === user.primaryEmailAddressId)
+        ?.emailAddress ?? primaryEmail;
+      const fullName = [user.firstName ?? "", user.lastName ?? ""].filter(Boolean).join(" ").trim();
+      serverName = fullName || user.username || serverEmail || "";
+    } catch (err) {
+      console.warn("POST /api/activity: gagal ambil identitas Clerk, pakai body client.", err);
+    }
 
     const body = (await request.json()) as {
       action?: string;
       entity?: string;
       entityId?: string;
       summary?: string;
+      userEmail?: string;
+      userName?: string;
     };
 
     const action = (VALID_ACTIONS.includes(body.action as ActivityAction)
@@ -64,6 +72,10 @@ export async function POST(request: NextRequest) {
     const entity = (body.entity ?? "Data").slice(0, 100);
     const entityId = (body.entityId ?? "").slice(0, 200);
     const summary = (body.summary ?? "").slice(0, 500);
+
+    // Prioritas identitas: Clerk server-side dulu, lalu fallback dari body client.
+    const email = (serverEmail || body.userEmail || "").trim().slice(0, 200);
+    const userName = (serverName || body.userName || email || "Staf").trim().slice(0, 200);
 
     const id = `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await logActivity({
