@@ -46,17 +46,17 @@ interface MasterTabProps {
   onDeleteBakulMaster: (index: number) => void;
   onAddOpsCategory: (category: string) => void;
   onDeleteOpsCategory: (category: string) => void;
-  onImportData: (data: {
+onImportData: (data: {
     sales: DailySale[];
     bakulRecords: BakulRecord[];
     ops: OperationalRecord[];
     items?: ItemMaster[];
     bakulMasters?: BakulMaster[];
-stockIn?: StockInRecord[];
+    stockIn?: StockInRecord[];
     stockOut?: StockOutRecord[];
     opsCategories?: string[];
     penyusutan?: PenyusutanRecord[];
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string }>;
   onResetData: () => void;
 }
 
@@ -158,12 +158,15 @@ exportToJSON(sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, o
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
+const reader = new FileReader();
+    reader.onload = async (event) => {
       try {
         const json = JSON.parse(event.target?.result as string);
         if (json && Array.isArray(json.sales) && Array.isArray(json.bakulRecords) && Array.isArray(json.ops)) {
-          onImportData({
+          // Pemanggilan onImportData menormalisasi backup lama -> skema baru,
+          // menyimpan ke state, lalu menyinkronkan ke server (force). Hasil
+          // berupa { ok, error } sehingga error spesifik bisa ditampilkan.
+          const result = await onImportData({
             sales: json.sales,
             bakulRecords: json.bakulRecords,
             ops: json.ops,
@@ -171,16 +174,25 @@ exportToJSON(sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, o
             bakulMasters: Array.isArray(json.bakulMasters) ? json.bakulMasters : [],
             stockIn: Array.isArray(json.stockIn) ? json.stockIn : [],
             stockOut: Array.isArray(json.stockOut) ? json.stockOut : [],
-opsCategories: Array.isArray(json.opsCategories) ? json.opsCategories : [],
+            opsCategories: Array.isArray(json.opsCategories) ? json.opsCategories : [],
             penyusutan: Array.isArray(json.penyusutan) ? json.penyusutan : [],
           });
-          setImportError("");
-          alert("Data berhasil di-import!");
+
+          if (result && result.ok) {
+            setImportError("");
+            alert("Data berhasil di-import!");
+          } else {
+            setImportError(
+              `Gagal menyimpan data: ${result?.error || "Terjadi kesalahan tidak diketahui."}`
+            );
+          }
         } else {
           setImportError("Format file JSON tidak sesuai dengan skema Buku Keuangan.");
         }
-      } catch {
-        setImportError("File tidak valid atau rusak.");
+      } catch (err) {
+        setImportError(
+          `File tidak valid atau rusak. ${err instanceof Error ? err.message : ""}`
+        );
       }
     };
     reader.readAsText(file);

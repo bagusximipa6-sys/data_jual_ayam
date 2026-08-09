@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS stock_out (
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_in_id TEXT DEFAULT '';
 
 -- Tabel: Riwayat Harga (Price History)
 -- Mencatat setiap perubahan harga beli & jual per barang, berbasis tanggal efektif (ISO YYYY-MM-DD).

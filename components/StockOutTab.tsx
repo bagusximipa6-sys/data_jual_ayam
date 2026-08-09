@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardBody,
+  Divider,
   Input,
   Modal,
   ModalBody,
@@ -15,8 +16,8 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
-import { BakulMaster, Role, StockOutRecord } from "@/types/finance";
+import { getTodayDate, resolveActiveStockIn, rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { BakulMaster, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
 
 // Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
@@ -27,6 +28,7 @@ const isRecordLocked = (date: string): boolean => {
 
 interface StockOutTabProps {
   stockOut: StockOutRecord[];
+  stockIn: StockInRecord[];
   itemNames: string[];
   bakulNames: string[];
   bakulMasters: BakulMaster[];
@@ -41,6 +43,7 @@ const nextId = () => `SO-${++stockOutIdCounter}`;
 
 export function StockOutTab({
   stockOut,
+  stockIn,
   itemNames,
   bakulNames,
   bakulMasters,
@@ -68,8 +71,16 @@ export function StockOutTab({
     [bakulMasters, form.bakulName]
   );
 
-  const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
-  const activeItemName = itemNames[0] || "Ayam";
+const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
+
+  // === Barang & Harga Modal (COGS) dari Barang Masuk aktif pada tanggal transaksi ===
+  // Setiap transaksi penjualan (Barang Keluar) terhubung dinamis (foreign key) ke Barang
+  // Masuk yang aktif pada tanggal transaksi, sehingga nama barang & harga beli / kg otomatis
+  // mengikuti Barang Masuk hari itu — bukan nyantol ke barang lain (mis. Arwani 1).
+const activeStockIn = resolveActiveStockIn(stockIn, form.date || getTodayDate());
+  const activeItemName = (itemNames[0] || "Ayam") as string;
+  const linkedItemName = activeStockIn?.itemName ?? activeItemName;
+  const activeBuyPrice = activeStockIn?.buyPrice ?? 0;
 
   // Parse Data Timbangan expression into individual weights.
   // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
@@ -118,10 +129,10 @@ export function StockOutTab({
     setWeighingsInput("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const bakulName = form.bakulName.trim();
-    const itemName = editingIndex !== null ? stockOut[editingIndex].itemName : activeItemName;
+    const itemName = editingIndex !== null ? stockOut[editingIndex].itemName : linkedItemName;
     const quantity = weighingsTotal;
     if (!bakulName || !itemName || quantity <= 0 || autoPrice <= 0) return;
 
@@ -132,6 +143,8 @@ export function StockOutTab({
       itemName,
       quantity,
       price: autoPrice,
+      buyPrice: activeBuyPrice,
+      stockInId: activeStockIn?.id,
       saleType: "eceran",
       weighings: parsedWeighings(),
       birdCount: form.birdCount ? toNumber(form.birdCount) : undefined,
@@ -309,7 +322,7 @@ export function StockOutTab({
             />
           </div>
 
-          {isAdmin && (
+{isAdmin && (
             <div className="rounded-xl bg-[#f7f5ef] p-4 border border-[#191712]/5 space-y-2">
               <div className="flex justify-between gap-3 text-xs">
                 <span className="font-bold text-[#706858]">Harga Jual / kg (dari Master Bakul)</span>
@@ -318,6 +331,19 @@ export function StockOutTab({
               <div className="flex justify-between gap-3 text-xs">
                 <span className="font-bold text-[#706858]">Total Penjualan</span>
                 <span className="font-mono font-black text-[#1f8f5f]">{rupiah(totalAuto)}</span>
+              </div>
+              <Divider className="bg-[#191712]/5" />
+              <div className="flex justify-between gap-3 text-xs">
+<span className="font-bold text-[#706858]">Barang Masuk Aktif (tertaut)</span>
+                <span className="font-mono font-black text-[#191712]">
+                  {activeStockIn ? linkedItemName : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="font-bold text-[#706858]">Harga Modal / kg (dari Barang Masuk)</span>
+                <span className="font-mono font-black text-[#8f321a]">
+                  {activeStockIn ? rupiah(activeBuyPrice) : "Rp0"}
+                </span>
               </div>
             </div>
           )}

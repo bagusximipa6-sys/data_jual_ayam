@@ -1,5 +1,20 @@
 import { BakulMaster, BakulRecord, DailySale, ItemMaster, OperationalRecord, PenyusutanRecord, StockInRecord, StockOutRecord } from "@/types/finance";
 
+// === Barang masuk aktif (active Stock In) pada tanggal tertentu ===
+// Logika: dari seluruh Barang Masuk dengan tanggal <= transaksi, pilih yang terbaru
+// (tanggal paling akhir). Barang masuk ini menjadi referensi dinamis (foreign key)
+// untuk transaksi penjualan (Barang Keluar), sehingga Harga Modal (COGS) per unit
+// mengikuti Harga Beli Otomatis / kg Barang Masuk yang aktif pada hari itu.
+export const resolveActiveStockIn = (
+  stockIn: StockInRecord[],
+  onDate: string
+): StockInRecord | null => {
+  const candidates = stockIn.filter((r) => r.date <= onDate);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.date.localeCompare(b.date));
+  return candidates[candidates.length - 1];
+};
+
 export const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",

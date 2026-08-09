@@ -84,6 +84,7 @@ export type StockOutRecord = {
   quantity: number;
   price: number;
   buyPrice?: number; // snapshot harga beli pada tanggal transaksi (Price History)
+  stockInId?: string; // referensi dinamis ke Barang Masuk (stock_in) yang aktif pada tanggal transaksi
   saleType?: "eceran" | "grosir";
   paymentMethod?: "cash" | "transfer" | "hutang";
   weighings?: WeighingEntry[];

@@ -61,19 +61,26 @@ export async function fetchAllFromServer(): Promise<Partial<LocalDataset> | null
 }
 
 // Menyimpan seluruh data ke server POST /api/data.
-// Mengembalikan true jika berhasil.
-export async function pushAllToServer(data: LocalDataset): Promise<boolean> {
+// `opts.force = true` digunakan untuk Restore/Import penuh (oleh admin):
+// menonaktifkan Guard Penguncian Harian agar data tanggal lampau dari backup
+// dapat ditulis. Mengembalikan { ok: boolean; error?: string }.
+export async function pushAllToServer(
+  data: LocalDataset,
+  opts: { force?: boolean } = {}
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch("/api/data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, force: opts.force === true }),
     });
-    if (!res.ok) return false;
-    const json = (await res.json()) as { ok?: boolean };
-    return json.ok === true;
-  } catch {
-    return false;
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || json.ok !== true) {
+      return { ok: false, error: json.error || `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Gagal terhubung ke server." };
   }
 }
 

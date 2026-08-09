@@ -1,0 +1,1 @@
+app/page.tsx(41,24): error TS2440: Import declaration conflicts with local declaration of 'resolveActiveStockIn'.

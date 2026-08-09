@@ -127,6 +127,27 @@ const buildProfitLoss = (
   // Resolver harga beli per-tanggal berdasarkan snapshot Barang Masuk.
   const resolveBuyPrice = buildBuyPriceResolver(stockIn);
 
+  // Map id Barang Masuk -> record, untuk referensi dinamis (foreign key).
+  const stockInById = new Map<string, StockInRecord>();
+  for (const si of stockIn) {
+    if (!stockInById.has(si.id)) stockInById.set(si.id, si);
+  }
+
+  // Resolver COGS (Harga Modal / kg) per transaksi penjualan.
+  // Prioritas 1: Barang Masuk yang tertaut (stockInId) — referensi dinamis otomatis.
+  // Prioritas 2: snapshot Harga Beli tersimpan pada transaksi (harga terkunci).
+  // Prioritas 3: Barang Masuk aktif pada tanggal transaksi (date-aware).
+  // Dengan ini, setiap transaksi penjualan memakai Harga Modal dari Barang Masuk
+  // yang aktif pada hari itu — bukan nyantol ke barang/harga lain.
+  const resolveModal = (record: StockOutRecord): number => {
+    if (record.stockInId) {
+      const linked = stockInById.get(record.stockInId);
+      if (linked && linked.buyPrice > 0) return linked.buyPrice;
+    }
+    if (record.buyPrice != null && record.buyPrice > 0) return record.buyPrice;
+    return resolveBuyPrice(record.itemName, record.date) ?? 0;
+  };
+
   // Map operational expenses by date
   const opsByDate = new Map<string, number>();
   for (const op of ops) {
@@ -143,14 +164,11 @@ const buildProfitLoss = (
 
   const sorted = [...stockOut].sort((a, b) => a.date.localeCompare(b.date));
 
-  for (const record of sorted) {
-    // Prioritas: snapshot Harga Beli yang tersimpan pada transaksi Barang Keluar (harga terkunci),
-    // lalu fallback ke harga Barang Masuk yang berlaku pada tanggal transaksi (date-aware).
-    // Dengan ini, transaksi lama TIDAK ikut memakai harga master yang baru di-edit.
-    const buyPrice =
-      record.buyPrice != null && record.buyPrice > 0
-        ? record.buyPrice
-        : (resolveBuyPrice(record.itemName, record.date) ?? 0);
+for (const record of sorted) {
+    // Harga Modal (COGS) per unit diambil secara dinamis dari Barang Masuk yang tertaut
+    // pada tanggal transaksi (referensi otomatis), sehingga laporan memakai modal yang
+    // akurat — bukan nyantol ke barang/harga lain.
+    const buyPrice = resolveModal(record);
     const omzet = record.quantity * record.price;
     const modalCost = record.quantity * buyPrice;
     const profit = omzet - modalCost;

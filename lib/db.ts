@@ -52,6 +52,7 @@ type StockOutRow = {
   quantity: number;
   price: number;
   buyPrice: number;
+  stockInId: string | null;
   saleType: string;
   paymentMethod: string;
   birdCount: number | null;
@@ -97,7 +98,7 @@ const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, 
       db.sql`SELECT id, name, sell_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
       db.sql`SELECT id, name, address AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`,
       db.sql`SELECT id, date, item_name AS "itemName", quantity, buy_price AS "buyPrice", bird_count AS "birdCount", weighings FROM stock_in ORDER BY created_at ASC`,
-      db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, buy_price AS "buyPrice", sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC`,
+db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, buy_price AS "buyPrice", stock_in_id AS "stockInId", sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC`,
       db.sql`SELECT date, modal_qty AS "modalQty", modal_total AS "modalTotal", sale_qty AS "saleQty", sale_total AS "saleTotal", shrink, target, gross_profit AS "grossProfit", difference, operational, net_profit AS "netProfit", note FROM sales ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, name, bill, paid, balance, note FROM bakul_records ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, description, amount, note FROM ops_records ORDER BY position ASC, created_at ASC`,
@@ -134,8 +135,9 @@ const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).
     bakulName: r.bakulName,
     itemName: r.itemName,
     quantity: num(r.quantity),
-    price: num(r.price),
+price: num(r.price),
     buyPrice: num(r.buyPrice),
+    stockInId: r.stockInId != null && r.stockInId !== "" ? r.stockInId : undefined,
     saleType: (r.saleType === "grosir" ? "grosir" : "eceran") as "eceran" | "grosir",
     paymentMethod: (r.paymentMethod === "transfer"
       ? "transfer"
@@ -251,9 +253,9 @@ const client = await db.connect();
     }
 // Stock out
     for (const r of stockOut) {
-      await client.sql`
-        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, sale_type, payment_method, bird_count, weighings)
-        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
+await client.sql`
+        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, stock_in_id, sale_type, payment_method, bird_count, weighings)
+        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.stockInId ?? ""}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
     }
     // Price history

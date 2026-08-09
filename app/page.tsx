@@ -38,7 +38,8 @@ import {
   type LocalDataset,
   type SyncStatus,
 } from "@/lib/sync";
-import { getTodayDate, rupiah, shortNumber, unique } from "@/lib/utils";
+import { normalizeImportData } from "@/lib/import-adapter";
+import { getTodayDate, resolveActiveStockIn, rupiah, shortNumber, unique } from "@/lib/utils";
 import {
   ActivityAction,
   ActivityLog,
@@ -136,9 +137,12 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
     return getTodayDate();
   });
 
-  // JSON Import & Reset
+// JSON Import & Reset
+  // Menerima data mentah (bisa dari backup lama), menormalisasi ke skema baru,
+  // menyimpan ke state, lalu sinkronkan ke server dengan `force` agar data
+  // tanggal lampau dari backup bisa ditulis setelah reset.
   const handleImportData = useCallback(
-    (data: {
+    async (data: {
       sales: DailySale[];
       bakulRecords: BakulRecord[];
       ops: OperationalRecord[];
@@ -150,16 +154,39 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
       penyusutan?: PenyusutanRecord[];
       priceHistory?: PriceHistory[];
     }) => {
-      setSales(data.sales);
-      setBakulRecords(data.bakulRecords);
-      setOps(data.ops);
-      if (data.items) setItems(data.items);
-      if (data.bakulMasters) setBakulMasters(data.bakulMasters);
-      if (data.stockIn) setStockIn(data.stockIn);
-      if (data.stockOut) setStockOut(data.stockOut);
-      if (data.opsCategories && data.opsCategories.length > 0) setOpsCategories(data.opsCategories);
-if (data.penyusutan) setPenyusutan(data.penyusutan);
-      if (data.priceHistory) setPriceHistory(data.priceHistory);
+      // Normalisasi backup lama -> skema baru (tambahkan default kolom baru,
+      // sinkronkan relasi stockOut -> stockIn).
+      const normalized = normalizeImportData(data);
+      const final = normalized ?? {
+        sales: data.sales,
+        bakulRecords: data.bakulRecords,
+        ops: data.ops,
+        items: data.items ?? [],
+        bakulMasters: data.bakulMasters ?? [],
+        stockIn: data.stockIn ?? [],
+        stockOut: data.stockOut ?? [],
+        opsCategories: data.opsCategories ?? [],
+        penyusutan: data.penyusutan ?? [],
+        priceHistory: data.priceHistory ?? [],
+      };
+
+      // Update state lokal.
+      setSales(final.sales);
+      setBakulRecords(final.bakulRecords);
+      setOps(final.ops);
+      setItems(final.items);
+      setBakulMasters(final.bakulMasters);
+      setStockIn(final.stockIn);
+      setStockOut(final.stockOut);
+      setOpsCategories(final.opsCategories);
+      setPenyusutan(final.penyusutan);
+      setPriceHistory(final.priceHistory);
+
+      // Sinkronkan ke server dengan force (restore penuh).
+      setSyncStatus("saving");
+      const result = await pushAllToServer(final as LocalDataset, { force: true });
+      setSyncStatus(result.ok ? "saved" : "error");
+      return result;
     },
     []
   );
@@ -244,9 +271,9 @@ handleImportData({
           penyusutan: initialPenyusutan as PenyusutanRecord[],
           priceHistory: initialPriceHistory as PriceHistory[],
         };
-        setSyncStatus("saving");
-        const success = await pushAllToServer(demoData);
-        setSyncStatus(success ? "saved" : "error");
+setSyncStatus("saving");
+        const result = await pushAllToServer(demoData);
+        setSyncStatus(result.ok ? "saved" : "error");
       }
     };
 
@@ -274,8 +301,8 @@ const handler = setTimeout(async () => {
         penyusutan,
         priceHistory,
       };
-      const success = await pushAllToServer(dataset);
-      setSyncStatus(success ? "saved" : "error");
+const result = await pushAllToServer(dataset);
+      setSyncStatus(result.ok ? "saved" : "error");
     }, 1500); // Debounce for 1.5 seconds
 
     return () => {
@@ -502,17 +529,51 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     };
   };
 
+// Resolver Harga Modal (COGS) per transaksi penjualan.
+// Prioritas 1: Barang Masuk yang tertaut (stockInId) — referensi dinamis.
+// Prioritas 2: Barang Masuk aktif pada tanggal transaksi (date-aware).
+// Prioritas 3: harga beli master / snapshot.
+const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPrice: number; stockInId?: string } => {
+  // Barang masuk yang aktif pada tanggal transaksi (referensi dinamis).
+  const activeStockIn = resolveActiveStockIn(stockIn, record.date);
+  const linked = activeStockIn ? stockIn.find((si) => si.id === record.stockInId) : undefined;
+
+  // Jika transaksi tertaut ke Barang Masuk: pakai barang & harga beli dari sana.
+  if (record.stockInId && linked) {
+    return { itemName: linked.itemName, buyPrice: linked.buyPrice, stockInId: linked.id };
+  }
+
+  // Jika belum tertaut tapi ada Barang Masuk aktif pada tanggal itu: tautkan.
+  if (activeStockIn) {
+    return { itemName: activeStockIn.itemName, buyPrice: activeStockIn.buyPrice, stockInId: activeStockIn.id };
+  }
+
+  // Fallback: barang & harga beli dari Master / snapshot yang diberikan.
+  const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
+  const activePrice = itemMaster
+    ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
+    : null;
+  return {
+    itemName: record.itemName,
+    buyPrice: activePrice ? activePrice.buyPrice : (itemMaster?.buyPrice ?? record.buyPrice ?? 0),
+    stockInId: record.stockInId,
+  };
+};
+
 // CRUD Transaksi Barang Keluar / Penjualan
   const handleAddStockOut = (record: StockOutRecord) => {
-    // Snapshot harga beli + harga jual dari riwayat harga yang berlaku pada tanggal transaksi.
-    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
-    const active = itemMaster
+    // Snapshot harga jual dari riwayat harga / Master; harga beli & barang dari Barang Masuk aktif.
+    const cogs = resolveStockOutCogs(record);
+    const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
+    const activeSell = itemMaster
       ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
       : null;
     const snapshot: StockOutRecord = {
       ...record,
-      buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? 0),
-      price: active && active.sellPrice > 0 ? active.sellPrice : record.price,
+      itemName: cogs.itemName,
+      buyPrice: cogs.buyPrice,
+      stockInId: cogs.stockInId,
+      price: activeSell && activeSell.sellPrice > 0 ? activeSell.sellPrice : record.price,
     };
     setStockOut((prev) => [snapshot, ...prev]);
     setBakulRecords((prev) => [stockOutToBakulRecord(snapshot), ...prev]);
@@ -522,14 +583,17 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     if (isRecordLocked(stockOut[index]?.date ?? record.date)) return;
     const previousRecord = stockOut[index];
     const previousNote = previousRecord ? stockOutPiutangNote(previousRecord.id) : stockOutPiutangNote(record.id);
-    const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
-    const active = itemMaster
+    const cogs = resolveStockOutCogs(record);
+    const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
+    const activeSell = itemMaster
       ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
       : null;
     const snapshot: StockOutRecord = {
       ...record,
-      buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? 0),
-      price: active && active.sellPrice > 0 ? active.sellPrice : record.price,
+      itemName: cogs.itemName,
+      buyPrice: cogs.buyPrice,
+      stockInId: cogs.stockInId,
+      price: activeSell && activeSell.sellPrice > 0 ? activeSell.sellPrice : record.price,
     };
     const nextPiutang = stockOutToBakulRecord(snapshot);
     setStockOut((prev) => prev.map((item, i) => (i === index ? snapshot : item)));
@@ -621,8 +685,8 @@ const handleResetData = async () => {
     setPenyusutan(initialPenyusutan as PenyusutanRecord[]);
     setPriceHistory(initialPriceHistory as PriceHistory[]);
 
-    // Re-seed the server with the initial (demo) data.
-    const success = await pushAllToServer({
+// Re-seed the server with the initial (demo) data.
+    const result = await pushAllToServer({
       sales: initialSales as DailySale[],
       bakulRecords: initialBakulRecords as BakulRecord[],
       ops: initialOperationalRecords as OperationalRecord[],
@@ -634,7 +698,7 @@ const handleResetData = async () => {
       penyusutan: initialPenyusutan as PenyusutanRecord[],
       priceHistory: initialPriceHistory as PriceHistory[],
     });
-setSyncStatus(success ? "saved" : (resetOk ? "saved" : "error"));
+setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
     recordActivity("reset", "Seluruh Data", "", "Reset data ke kondisi awal demo");
     refreshActivityLogs();
   };
@@ -895,9 +959,9 @@ setSyncStatus(success ? "saved" : (resetOk ? "saved" : "error"));
                   <p className="py-10 text-center text-sm text-[#706858]">
                     Belum ada barang keluar / penjualan pada tanggal ini.
                   </p>
-                ) : (
+) : (
                   <div className="space-y-2">
-{dailyRecords.map((record) => (
+                    {dailyRecords.map((record) => (
                       <div
                         key={record.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#f7f5ef] px-4 py-3 text-xs"
@@ -944,6 +1008,7 @@ setSyncStatus(success ? "saved" : (resetOk ? "saved" : "error"));
 {menu === "stockout" && (
 <StockOutTab
               stockOut={stockOut}
+              stockIn={stockIn}
               itemNames={itemNames}
               bakulNames={bakulNames}
               bakulMasters={bakulMasters}
