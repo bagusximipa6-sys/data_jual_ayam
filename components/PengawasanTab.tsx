@@ -46,7 +46,7 @@ export function PengawasanTab({ logs, onRefresh }: PengawasanTabProps) {
     );
   }, [logs, search]);
 
-  const stats = useMemo(() => {
+const stats = useMemo(() => {
     const count = (action: ActivityAction) => logs.filter((l) => l.action === action).length;
     const users = new Set(logs.map((l) => l.userEmail || l.userName).filter(Boolean));
     return {
@@ -58,6 +58,41 @@ export function PengawasanTab({ logs, onRefresh }: PengawasanTabProps) {
       users: users.size,
     };
   }, [logs]);
+
+  // Inisial avatar dari nama, fallback ke huruf pertama email, lalu fallback netral.
+  const initialsOf = (log: ActivityLog) => {
+    const name = (log.userName || "").trim();
+if (name) {
+      const parts = name.split(/\s+/).filter(Boolean);
+      const first = (parts[0]?.[0] ?? "").toUpperCase();
+      const last = (parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : "").toUpperCase();
+      return (first + last).slice(0, 2);
+    }
+    const email = (log.userEmail || "").trim();
+    if (email) return email[0].toUpperCase();
+    return "?";
+  };
+
+  // Nama tampilan: nama bila ada, else email bila ada, else label netral (bukan role "Staf").
+  const displayName = (log: ActivityLog) => {
+    const name = (log.userName || "").trim();
+    if (name) return name;
+    const email = (log.userEmail || "").trim();
+    if (email) return email;
+    return "Pengguna";
+  };
+
+  const avatarTones = [
+    "bg-[#e6f1ff] text-[#173a61]",
+    "bg-[#e7f5ec] text-[#1f8f5f]",
+    "bg-[#fff3cd] text-[#8f6b00]",
+    "bg-[#ffe2d8] text-[#8f321a]",
+    "bg-[#f0eadb] text-[#191712]",
+  ];
+  const avatarTone = (log: ActivityLog) => {
+    const seed = (log.userEmail || log.userName || "").length;
+    return avatarTones[seed % avatarTones.length];
+  };
 
   return (
     <div className="space-y-6">
@@ -91,7 +126,15 @@ export function PengawasanTab({ logs, onRefresh }: PengawasanTabProps) {
         <StatCard label="Edit" value={stats.update} tone="blue" />
         <StatCard label="Hapus" value={stats.delete} tone="red" />
         <StatCard label="Reset" value={stats.reset} tone="yellow" />
-        <StatCard label="Staf/Pengguna" value={stats.users} tone="plain" />
+<div className="relative">
+          <StatCard label="Staf / Pengguna" value={stats.users} tone="plain" />
+          <span
+            className="absolute bottom-1.5 right-2 text-[9px] font-bold text-[#706858]/70"
+            title="Jumlah pengguna unik dihitung dari nama/email yang tercatat pada riwayat aktivitas."
+          >
+            unik
+          </span>
+        </div>
       </div>
 
       {/* Tabel Riwayat */}
@@ -134,8 +177,8 @@ export function PengawasanTab({ logs, onRefresh }: PengawasanTabProps) {
                   <th className="py-3 pr-4 font-bold">Waktu</th>
                   <th className="py-3 pr-4 font-bold">Aksi</th>
                   <th className="py-3 pr-4 font-bold">Entitas</th>
-                  <th className="py-3 pr-4 font-bold">Ringkasan</th>
-                  <th className="py-3 pr-4 font-bold">Staf</th>
+<th className="py-3 pr-4 font-bold">Ringkasan</th>
+                  <th className="py-3 pr-4 font-bold">Staf / Pengguna</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,12 +200,20 @@ export function PengawasanTab({ logs, onRefresh }: PengawasanTabProps) {
                       </td>
                       <td className="py-3 pr-4 font-bold text-[#191712] whitespace-nowrap">{log.entity}</td>
                       <td className="py-3 pr-4 text-xs text-[#706858]">{log.summary || "—"}</td>
-                      <td className="py-3 pr-4">
-                        <div className="text-xs">
-                          <p className="font-bold text-[#191712]">{log.userName || "Staf"}</p>
-                          {log.userEmail && (
-                            <p className="text-[10px] text-[#706858]">{log.userEmail}</p>
-                          )}
+<td className="py-3 pr-4">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${avatarTone(log)}`}
+                            title={displayName(log)}
+                          >
+                            {initialsOf(log)}
+                          </span>
+                          <div className="min-w-0 text-xs">
+                            <p className="truncate font-bold text-[#191712]">{displayName(log)}</p>
+                            {log.userEmail && (
+                              <p className="truncate text-[10px] text-[#706858]">{log.userEmail}</p>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
