@@ -1,0 +1,9 @@
+132:  const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(initialPenyusutan as PenyusutanRecord[]);
+182:      setPenyusutan(final.penyusutan);
+660:    setPenyusutan((prev) => [record, ...prev]);
+665:    setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
+671:    setPenyusutan((prev) => prev.filter((_, i) => i !== index));
+676:  const handleAutoGeneratePenyusutan = (records: PenyusutanRecord[]) => {
+678:    setPenyusutan((prev) => [...records, ...prev]);
+703:    setPenyusutan(initialPenyusutan as PenyusutanRecord[]);
+1073:              onAutoGeneratePenyusutan={handleAutoGeneratePenyusutan}

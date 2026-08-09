@@ -146,10 +146,11 @@ export function PenyusutanTab({
       {/* Form Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="text-xl font-black text-[#191712]">
-          {editingIndex === null ? "Catat Penyusutan" : "Edit Penyusutan"}
+          {editingIndex === null ? "Penyusutan Otomatis" : "Edit Penyusutan"}
         </h2>
         <p className="text-xs text-[#706858] mt-1 mb-4">
-          Bandingkan stok yang seharusnya (stok masuk − keluar) dengan stok fisik aktual. Penyusutan dihitung otomatis.
+          Penyusutan dihitung & dicatat otomatis dari sisa stok harian (Stok Masuk − Barang Terjual). Tidak perlu input
+          manual — sisa stok di akhir hari di-reset ke 0 secara otomatis.
         </p>
 
         {isAdmin ? (

@@ -39,7 +39,7 @@ import {
   type SyncStatus,
 } from "@/lib/sync";
 import { normalizeImportData } from "@/lib/import-adapter";
-import { getTodayDate, resolveActiveStockIn, rupiah, shortNumber, unique } from "@/lib/utils";
+import { buildAutoPenyusutan, getTodayDate, resolveActiveStockIn, rupiah, shortNumber, unique } from "@/lib/utils";
 import {
   ActivityAction,
   ActivityLog,
@@ -680,6 +680,32 @@ const handleDeletePenyusutan = (index: number) => {
       recordActivity("add", "Penyusutan", r.id, `${r.itemName} • ${r.date} (Auto Stock Reset −${r.amount} kg)`);
     }
   };
+
+  // === Penyusutan Otomatis (Tanpa Input Manual) ===
+  // Setiap kali ada perubahan stok (Barang Masuk / Barang Keluar), hitung sisa
+  // stok per tanggal untuk semua tanggal yang memiliki transaksi. Sisa > 0 yang
+  // belum tercatat sebagai penyusutan akan otomatis ditambahkan (no carry-over,
+  // stok akhir hari di-reset ke 0). Dedupe oleh buildAutoPenyusutan (skip yang
+  // sudah punya catatan), sehingga tidak terjadi loop tak berujung.
+  useEffect(() => {
+    if (!isClient || syncStatus === "loading" || syncStatus === "offline") return;
+
+    const dates = new Set<string>();
+    for (const r of stockIn) if (r.date) dates.add(r.date);
+    for (const r of stockOut) if (r.date) dates.add(r.date);
+
+    const toAdd: PenyusutanRecord[] = [];
+    for (const date of dates) {
+      toAdd.push(...buildAutoPenyusutan(stockIn, stockOut, date, penyusutan));
+    }
+    if (toAdd.length === 0) return;
+
+    setPenyusutan((prev) => [...toAdd, ...prev]);
+    for (const r of toAdd) {
+      recordActivity("add", "Penyusutan", r.id, `${r.itemName} • ${r.date} (Auto Stock Reset −${r.amount} kg)`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockIn, stockOut, penyusutan, isClient]);
 
 const handleResetData = async () => {
     setSyncStatus("saving");
