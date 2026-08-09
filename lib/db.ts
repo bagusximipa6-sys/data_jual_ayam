@@ -32,6 +32,18 @@ export type AppDataSet = {
 const num = (v: unknown): number =>
   typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) || 0 : 0;
 
+// === Pastikan kolom baru ada (idempotent) ===
+// Dipanggil sebelum load/save agar aplikasi tetap online walau DB produksi
+// (Vercel) belum dimigrasi. Kolom baru `stock_in_id` ditambahkan jika belum ada.
+export async function ensureStockInIdColumn(): Promise<void> {
+  try {
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_in_id TEXT DEFAULT ''`;
+  } catch {
+    // Abaikan bila gagal (mis. sudah ada / tidak punya izin) — query utama
+    // akan tetap mencoba dan fallback di bawah.
+  }
+}
+
 // === Tipe baris hasil query ===
 type ItemRow = { id: string; name: string; buyPrice: number };
 type BakulMasterRow = { id: string; name: string; sellPrice: number };
@@ -93,6 +105,9 @@ type MetaRow = { opsCategories: string[] };
 
 // === Load seluruh data dari DB ===
 export async function loadAllData(): Promise<AppDataSet> {
+  // Pastikan kolom baru ada sebelum query (agar tetap online walau belum migrasi).
+  await ensureStockInIdColumn();
+
 const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR, priceHistoryR] =
     await Promise.all([
       db.sql`SELECT id, name, sell_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
@@ -206,6 +221,9 @@ const penyusutan: PenyusutanRecord[] = (penyusutanR.rows as unknown as Penyusuta
 
 // === Simpan seluruh data (transaksi atomik) ===
 export async function saveAllData(data: AppDataSet): Promise<void> {
+  // Pastikan kolom baru ada sebelum INSERT (agar save tidak gagal di DB lama).
+  await ensureStockInIdColumn();
+
 const {
     sales,
     bakulRecords,

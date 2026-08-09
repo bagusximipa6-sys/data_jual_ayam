@@ -73,6 +73,70 @@ export const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
+// === Sisa stok harian per barang pada tanggal tertentu ===
+// Daily Stock Reset: sisa = (Barang Masuk − Barang Terjual) pada tanggal tsb.
+// Stok TIDAK dibawa ke hari berikutnya (no carry-over); sisa di akhir hari
+// dianggap Penyusutan/Loss dan di-reset ke 0, sehingga modal hari esok murni
+// 100% dari Barang Masuk tanggal esoknya.
+export const computeDailyLeftover = (
+  stockIn: StockInRecord[],
+  stockOut: StockOutRecord[],
+  date: string
+): Array<{ itemName: string; leftover: number }> => {
+  const map = new Map<string, number>();
+  for (const r of stockIn) {
+    if (r.date !== date) continue;
+    const key = r.itemName.toLowerCase();
+    map.set(key, (map.get(key) ?? 0) + r.quantity);
+  }
+  for (const r of stockOut) {
+    if (r.date !== date) continue;
+    const key = r.itemName.toLowerCase();
+    map.set(key, (map.get(key) ?? 0) - r.quantity);
+  }
+  const result: Array<{ itemName: string; leftover: number }> = [];
+  for (const [key, leftover] of map.entries()) {
+    if (leftover > 0) {
+      const original = stockIn.find((r) => r.itemName.toLowerCase() === key)?.itemName ?? key;
+      result.push({ itemName: original, leftover });
+    }
+  }
+  return result;
+};
+
+// === Auto-generate catatan Penyusutan (Daily Closing / Stock Reset) ===
+// Membuat record Penyusutan untuk setiap barang yang memiliki sisa > 0 pada
+// tanggal penutupan (closingDate). Sisa stok di-reset ke 0 (loss) sehingga
+// tidak carry-over ke hari berikutnya.
+export const buildAutoPenyusutan = (
+  stockIn: StockInRecord[],
+  stockOut: StockOutRecord[],
+  closingDate: string,
+  existing: PenyusutanRecord[]
+): PenyusutanRecord[] => {
+  const leftovers = computeDailyLeftover(stockIn, stockOut, closingDate);
+  // Hindari duplikat: jangan buat record untuk barang yang sudah punya catatan penyusutan pada tanggal tsb.
+  const existingKeys = new Set(
+    existing
+      .filter((p) => p.date === closingDate)
+      .map((p) => p.itemName.toLowerCase())
+  );
+  const newRecords: PenyusutanRecord[] = [];
+  for (const { itemName, leftover } of leftovers) {
+    const key = itemName.toLowerCase();
+    if (existingKeys.has(key)) continue;
+    newRecords.push({
+      id: `PY-AUTO-${closingDate}-${key}-${Date.now()}`,
+      date: closingDate,
+      itemName,
+      expectedStock: leftover,
+      actualStock: 0,
+      amount: leftover,
+    });
+  }
+  return newRecords;
+};
+
 export const getMonthLabel = (dateStr: string) => {
   if (!dateStr || dateStr.length < 7) return dateStr;
   const [year, month] = dateStr.split("-");

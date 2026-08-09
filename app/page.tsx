@@ -656,11 +656,20 @@ const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
     setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
     recordActivity("update", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
   };
-  const handleDeletePenyusutan = (index: number) => {
+const handleDeletePenyusutan = (index: number) => {
     const deleted = penyusutan[index];
     if (!deleted || isRecordLocked(deleted.date)) return;
     setPenyusutan((prev) => prev.filter((_, i) => i !== index));
     if (deleted) recordActivity("delete", "Penyusutan", deleted.id, `${deleted.itemName} • ${deleted.date}`);
+  };
+
+  // Daily Stock Reset: simpan beberapa catatan penyusutan otomatis sekaligus.
+  const handleAutoGeneratePenyusutan = (records: PenyusutanRecord[]) => {
+    if (!records || records.length === 0) return;
+    setPenyusutan((prev) => [...records, ...prev]);
+    for (const r of records) {
+      recordActivity("add", "Penyusutan", r.id, `${r.itemName} • ${r.date} (Auto Stock Reset −${r.amount} kg)`);
+    }
   };
 
 const handleResetData = async () => {
@@ -1052,6 +1061,7 @@ setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
               onAddPenyusutan={handleAddPenyusutan}
               onUpdatePenyusutan={handleUpdatePenyusutan}
               onDeletePenyusutan={handleDeletePenyusutan}
+              onAutoGeneratePenyusutan={handleAutoGeneratePenyusutan}
             />
           )}
 
