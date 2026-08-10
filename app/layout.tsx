@@ -7,9 +7,9 @@ export const metadata: Metadata = {
   title: 'Rembo Broiler | Buku Keuangan Usaha',
   description: 'Buku Keuangan Usaha Rembo Broiler',
   icons: {
-    icon: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
-    shortcut: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
-    apple: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png',
   },
 }
 
