@@ -8,7 +8,7 @@ export default async function OgImage() {
   return new ImageResponse(
     (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src="http://localhost:3000/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg" alt={alt} tw="w-full h-full" />
+      <img src={`${process.env.NEXT_PUBLIC_BASE_URL}/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg`} alt={alt} tw="w-full h-full" />
     ),
     size
   );

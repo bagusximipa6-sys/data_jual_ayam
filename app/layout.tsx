@@ -5,6 +5,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "Rembo Broiler | Buku Keuangan Usaha",
+  icons: "/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg",
   description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
   openGraph: {
     title: "Rembo Broiler | Buku Keuangan Usaha",
