@@ -12,9 +12,9 @@ import {
   Select,
   SelectItem,
 } from "@heroui/react";
-import { AlertCircle, Edit2, Lock, Plus, Scale, Search, Sparkles, Trash2 } from "lucide-react";
+import { AlertCircle, Edit2, Lock, Plus, Scale, Search, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { buildAutoPenyusutan, computeDailyLeftover, getTodayDate, rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { buildAutoPenyusutan, computeDailyLeftover, getTodayDate, shortNumber, toNumber } from "@/lib/utils";
 import { PenyusutanRecord, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 
 // Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
