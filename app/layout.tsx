@@ -4,12 +4,12 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Buku Keuangan Usaha | Data Jual Ayam",
+  title: "Rembo Broiler | Buku Keuangan Usaha",
   description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
   openGraph: {
-    title: "Buku Keuangan Usaha | Data Jual Ayam",
+    title: "Rembo Broiler | Buku Keuangan Usaha",
     description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
-    siteName: "Buku Keuangan Usaha",
+    siteName: "Rembo Broiler",
   },
 };
 
