@@ -4,15 +4,14 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Rembo Broiler | Buku Keuangan Usaha",
-  icons: "/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg",
-  description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
-  openGraph: {
-    title: "Rembo Broiler | Buku Keuangan Usaha",
-    description: "Aplikasi pencatatan keuangan usaha perdagangan ayam, rekap penjualan, operasional, dan tagihan piutang bakul.",
-    siteName: "Rembo Broiler",
+  title: 'Rembo Broiler | Buku Keuangan Usaha',
+  description: 'Buku Keuangan Usaha Rembo Broiler',
+  icons: {
+    icon: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
+    shortcut: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
+    apple: '/05963995-eb7f-41f2-ad09-3ab7e27a9f99.jpg',
   },
-};
+}
 
 export const viewport: Viewport = {
   width: "device-width",
