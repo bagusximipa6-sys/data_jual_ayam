@@ -626,14 +626,28 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     recordActivity("update", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
   };
   const handleDeleteStockOut = (index: number) => {
-    const deletedRecord = stockOut[index];
-    if (!deletedRecord || isRecordLocked(deletedRecord.date)) return;
-    const deletedNote = stockOutPiutangNote(deletedRecord.id);
-    setStockOut((prev) => prev.filter((_, i) => i !== index));
-    if (deletedNote) {
-      setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
+    const recordToDelete = stockOut[index];
+    if (!recordToDelete || isRecordLocked(recordToDelete.date)) return;
+
+    // Cek apakah record ini adalah bagian dari "split" (punya birdCount dan weighings).
+    // Jika ya, kita harus menghapus semua record lain yang berasal dari split yang sama.
+    const isSplitParent = (recordToDelete.weighings?.length ?? 0) > 0;
+
+    if (isSplitParent) {
+      // Ini adalah record "induk" dari sebuah split. Kita perlu menemukan semua "anak"-nya.
+      // Asumsi: semua record dalam satu split memiliki tanggal, nama bakul, dan jumlah ayam yang sama.
+      // Kita juga akan menghapus semua piutang yang terkait.
+      const recordsToDelete = stockOut.filter(
+        (r) => r.date === recordToDelete.date && r.bakulName === recordToDelete.bakulName && r.birdCount === recordToDelete.birdCount
+      );
+      const idsToDelete = new Set(recordsToDelete.map((r) => r.id));
+      const notesToDelete = new Set(recordsToDelete.map((r) => stockOutPiutangNote(r.id)));
+
+      setStockOut((prev) => prev.filter((r) => !idsToDelete.has(r.id)));
+      setBakulRecords((prev) => prev.filter((br) => !notesToDelete.has(br.note)));
+
+      recordActivity("delete", "Barang Keluar (Split)", recordToDelete.id, `Hapus ${recordsToDelete.length} penjualan split untuk ${recordToDelete.bakulName} tgl ${recordToDelete.date}`);
     }
-    recordActivity("delete", "Barang Keluar", deletedRecord.id, `${deletedRecord.itemName} • ${deletedRecord.bakulName} • ${deletedRecord.date}`);
   };
 
   // [BARU] Fungsi atomik untuk edit dengan auto-splitting: hapus yang lama, tambah yang baru dalam satu state update.
