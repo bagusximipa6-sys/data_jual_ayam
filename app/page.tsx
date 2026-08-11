@@ -626,27 +626,32 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     recordActivity("update", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
   };
   const handleDeleteStockOut = (index: number) => {
-    const recordToDelete = stockOut[index];
+    const recordToDelete = stockOut[index]; // prettier-ignore
     if (!recordToDelete || isRecordLocked(recordToDelete.date)) return;
 
     // Cek apakah record ini adalah bagian dari "split" (punya birdCount dan weighings).
     // Jika ya, kita harus menghapus semua record lain yang berasal dari split yang sama.
-    const isSplitParent = (recordToDelete.weighings?.length ?? 0) > 0;
+    const isSplitParent = (recordToDelete.weighings?.length ?? 0) > 0 && recordToDelete.birdCount != null;
 
     if (isSplitParent) {
       // Ini adalah record "induk" dari sebuah split. Kita perlu menemukan semua "anak"-nya.
-      // Asumsi: semua record dalam satu split memiliki tanggal, nama bakul, dan jumlah ayam yang sama.
+      // Asumsi: semua record dalam satu split memiliki tanggal, nama bakul, dan jumlah ayam (birdCount) yang sama.
       // Kita juga akan menghapus semua piutang yang terkait.
       const recordsToDelete = stockOut.filter(
         (r) => r.date === recordToDelete.date && r.bakulName === recordToDelete.bakulName && r.birdCount === recordToDelete.birdCount
       );
       const idsToDelete = new Set(recordsToDelete.map((r) => r.id));
       const notesToDelete = new Set(recordsToDelete.map((r) => stockOutPiutangNote(r.id)));
-
       setStockOut((prev) => prev.filter((r) => !idsToDelete.has(r.id)));
       setBakulRecords((prev) => prev.filter((br) => !notesToDelete.has(br.note)));
 
       recordActivity("delete", "Barang Keluar (Split)", recordToDelete.id, `Hapus ${recordsToDelete.length} penjualan split untuk ${recordToDelete.bakulName} tgl ${recordToDelete.date}`);
+    } else {
+      // Ini adalah record tunggal atau "anak" dari split. Hapus hanya record ini.
+      const deletedNote = stockOutPiutangNote(recordToDelete.id);
+      setStockOut((prev) => prev.filter((_, i) => i !== index));
+      setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
+      recordActivity("delete", "Barang Keluar", recordToDelete.id, `${recordToDelete.itemName} • ${recordToDelete.bakulName} • ${recordToDelete.date}`);
     }
   };
 
