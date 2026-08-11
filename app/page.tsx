@@ -9,7 +9,7 @@ import {
   ClipboardList,
   Database,
   FileBarChart,
-  HandCoins,
+  HandCoins, // prettier-ignore
 Package,
   PackagePlus,
   ShieldCheck,
@@ -39,7 +39,7 @@ import {
   type SyncStatus,
 } from "@/lib/sync";
 import { normalizeImportData } from "@/lib/import-adapter";
-import { buildAutoPenyusutan, getTodayDate, resolveActiveStockIn, rupiah, shortNumber, unique } from "@/lib/utils";
+import { getTodayDate, resolveAvailableStock, rupiah, shortNumber, unique } from "@/lib/utils";
 import {
   ActivityAction,
   ActivityLog,
@@ -543,18 +543,18 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
 // Prioritas 2: Barang Masuk aktif pada tanggal transaksi (date-aware).
 // Prioritas 3: harga beli master / snapshot.
 const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPrice: number; stockInId?: string } => {
-  // Barang masuk yang aktif pada tanggal transaksi (referensi dinamis).
-  const activeStockIn = resolveActiveStockIn(stockIn, record.date);
-  const linked = activeStockIn ? stockIn.find((si) => si.id === record.stockInId) : undefined;
+  // [MODIFIKASI] Gunakan resolver baru yang memeriksa sisa stok (FIFO).
+  const availableStock = resolveAvailableStock(stockIn, stockOut, record.date);
+  const linked = availableStock ? stockIn.find((si) => si.id === record.stockInId) : undefined;
 
   // Jika transaksi tertaut ke Barang Masuk: pakai barang & harga beli dari sana.
   if (record.stockInId && linked) {
     return { itemName: linked.itemName, buyPrice: linked.buyPrice, stockInId: linked.id };
   }
 
-  // Jika belum tertaut tapi ada Barang Masuk aktif pada tanggal itu: tautkan.
-  if (activeStockIn) {
-    return { itemName: activeStockIn.itemName, buyPrice: activeStockIn.buyPrice, stockInId: activeStockIn.id };
+  // Jika belum tertaut tapi ada Barang Masuk yang TERSEDIA pada tanggal itu: tautkan.
+  if (availableStock) {
+    return { itemName: availableStock.record.itemName, buyPrice: availableStock.record.buyPrice, stockInId: availableStock.record.id };
   }
 
   // Fallback: barang & harga beli dari Master / snapshot yang diberikan.
@@ -570,23 +570,35 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
 };
 
 // CRUD Transaksi Barang Keluar / Penjualan
-  const handleAddStockOut = (record: StockOutRecord) => {
-    // Snapshot harga jual dari riwayat harga / Master; harga beli & barang dari Barang Masuk aktif.
-    const cogs = resolveStockOutCogs(record);
-    const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
-    const activeSell = itemMaster
-      ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
-      : null;
-    const snapshot: StockOutRecord = {
-      ...record,
-      itemName: cogs.itemName,
-      buyPrice: cogs.buyPrice,
-      stockInId: cogs.stockInId,
-      price: activeSell && activeSell.sellPrice > 0 ? activeSell.sellPrice : record.price,
-    };
-    setStockOut((prev) => [snapshot, ...prev]);
-    setBakulRecords((prev) => [stockOutToBakulRecord(snapshot), ...prev]);
-    recordActivity("add", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
+  const handleAddStockOut = (record: StockOutRecord | StockOutRecord[]) => {
+    // [MODIFIKASI] Tangani kasus di mana `record` adalah array (dari auto-splitting)
+    // atau objek tunggal (jika fitur lama masih digunakan di suatu tempat).
+    const recordsToAdd = Array.isArray(record) ? record : [record];
+
+    // Jika `record` bukan array, kita perlu snapshot harga jual & COGS.
+    // Jika sudah array, diasumsikan sudah di-snapshot oleh `StockOutTab`.
+    if (!Array.isArray(record)) {
+      const cogs = resolveStockOutCogs(record);
+      const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
+      const activeSell = itemMaster ? resolveActivePrice(priceHistory, itemMaster.id, record.date) : null;
+      const snapshot: StockOutRecord = {
+        ...record,
+        itemName: cogs.itemName,
+        buyPrice: cogs.buyPrice,
+        stockInId: cogs.stockInId,
+        price: activeSell && activeSell.sellPrice > 0 ? activeSell.sellPrice : record.price,
+      };
+      recordsToAdd[0] = snapshot;
+    }
+
+    setStockOut((prev) => [...recordsToAdd, ...prev]);
+
+    const piutangToAdd = recordsToAdd.map(stockOutToBakulRecord);
+    setBakulRecords((prev) => [...piutangToAdd, ...prev]);
+
+    for (const r of recordsToAdd) {
+      recordActivity("add", "Barang Keluar", r.id, `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`);
+    }
   };
   const handleUpdateStockOut = (index: number, record: StockOutRecord) => {
     if (isRecordLocked(stockOut[index]?.date ?? record.date)) return;
@@ -624,6 +636,23 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     recordActivity("delete", "Barang Keluar", deletedRecord.id, `${deletedRecord.itemName} • ${deletedRecord.bakulName} • ${deletedRecord.date}`);
   };
 
+  // [BARU] Fungsi atomik untuk edit dengan auto-splitting: hapus yang lama, tambah yang baru dalam satu state update.
+  const handleUpdateAndResplitStockOut = (deleteIndex: number, recordsToAdd: StockOutRecord[]) => {
+    const deletedRecord = stockOut[deleteIndex];
+    if (!deletedRecord || isRecordLocked(deletedRecord.date)) return;
+
+    const deletedNote = stockOutPiutangNote(deletedRecord.id);
+
+    // Gabungkan state update dalam satu panggilan untuk menghindari race condition
+    setStockOut((prev) => [...prev.filter((_, i) => i !== deleteIndex), ...recordsToAdd]);
+    const piutangToAdd = recordsToAdd.map(stockOutToBakulRecord);
+    setBakulRecords((prev) => [...prev.filter((br) => br.note !== deletedNote), ...piutangToAdd]);
+
+    for (const r of recordsToAdd) {
+      recordActivity("add", "Barang Keluar (dari Edit)", r.id, `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`);
+    }
+  };
+
   // CRUD Biaya Operasional
   const handleAddOps = (record: OperationalRecord) => {
     setOps((prev) => [record, ...prev]);
@@ -655,16 +684,6 @@ const handleDeleteOpsCategory = (category: string) => {
     setOpsCategories((prev) => prev.filter((c) => c !== category));
   };
 
-// CRUD Penyusutan
-  const handleAddPenyusutan = (record: PenyusutanRecord) => {
-    setPenyusutan((prev) => [record, ...prev]);
-    recordActivity("add", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
-  };
-const handleUpdatePenyusutan = (index: number, record: PenyusutanRecord) => {
-    if (isRecordLocked(penyusutan[index]?.date ?? record.date)) return;
-    setPenyusutan((prev) => prev.map((item, i) => (i === index ? record : item)));
-    recordActivity("update", "Penyusutan", record.id, `${record.itemName} • ${record.date}`);
-  };
 const handleDeletePenyusutan = (index: number) => {
     const deleted = penyusutan[index];
     if (!deleted || isRecordLocked(deleted.date)) return;
@@ -680,32 +699,6 @@ const handleDeletePenyusutan = (index: number) => {
       recordActivity("add", "Penyusutan", r.id, `${r.itemName} • ${r.date} (Auto Stock Reset −${r.amount} kg)`);
     }
   };
-
-  // === Penyusutan Otomatis (Tanpa Input Manual) ===
-  // Setiap kali ada perubahan stok (Barang Masuk / Barang Keluar), hitung sisa
-  // stok per tanggal untuk semua tanggal yang memiliki transaksi. Sisa > 0 yang
-  // belum tercatat sebagai penyusutan akan otomatis ditambahkan (no carry-over,
-  // stok akhir hari di-reset ke 0). Dedupe oleh buildAutoPenyusutan (skip yang
-  // sudah punya catatan), sehingga tidak terjadi loop tak berujung.
-  useEffect(() => {
-    if (!isClient || syncStatus === "loading" || syncStatus === "offline") return;
-
-    const dates = new Set<string>();
-    for (const r of stockIn) if (r.date) dates.add(r.date);
-    for (const r of stockOut) if (r.date) dates.add(r.date);
-
-    const toAdd: PenyusutanRecord[] = [];
-    for (const date of dates) {
-      toAdd.push(...buildAutoPenyusutan(stockIn, stockOut, date, penyusutan));
-    }
-    if (toAdd.length === 0) return;
-
-    setPenyusutan((prev) => [...toAdd, ...prev]);
-    for (const r of toAdd) {
-      recordActivity("add", "Penyusutan", r.id, `${r.itemName} • ${r.date} (Auto Stock Reset −${r.amount} kg)`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stockIn, stockOut, penyusutan, isClient]);
 
 const handleResetData = async () => {
     setSyncStatus("saving");
@@ -1053,12 +1046,14 @@ setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
 <StockOutTab
               stockOut={stockOut}
               stockIn={stockIn}
+              allStockOut={stockOut}
               itemNames={itemNames}
               bakulNames={bakulNames}
               bakulMasters={bakulMasters}
               role={role}
               onAddStockOut={handleAddStockOut}
               onUpdateStockOut={handleUpdateStockOut}
+              onUpdateAndResplitStockOut={handleUpdateAndResplitStockOut}
               onDeleteStockOut={handleDeleteStockOut}
             />
           )}
@@ -1091,10 +1086,7 @@ setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
               penyusutan={penyusutan}
               stockIn={stockIn}
               stockOut={stockOut}
-              itemNames={itemNames}
               role={role}
-              onAddPenyusutan={handleAddPenyusutan}
-              onUpdatePenyusutan={handleUpdatePenyusutan}
               onDeletePenyusutan={handleDeletePenyusutan}
               onAutoGeneratePenyusutan={handleAutoGeneratePenyusutan}
             />

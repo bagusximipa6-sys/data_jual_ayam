@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  Button,
   Card,
   CardBody,
   Divider,
   Input,
   Modal,
+  Button,
   ModalBody,
   ModalContent,
   ModalHeader,
@@ -16,14 +16,14 @@ import {
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { getTodayDate, resolveActiveStockIn, rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { getTodayDate, resolveAvailableStockBatches, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
 
 // Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
 const isRecordLocked = (date: string): boolean => {
   const today = getTodayDate();
-  return typeof date === "string" && date.length >= 10 && date < today;
+  return typeof date === "string" && date.length >= 10 && date < today; // prettier-ignore
 };
 
 interface StockOutTabProps {
@@ -31,10 +31,12 @@ interface StockOutTabProps {
   stockIn: StockInRecord[];
   itemNames: string[];
   bakulNames: string[];
+  allStockOut: StockOutRecord[]; // [BARU] Diperlukan untuk cek sisa stok
   bakulMasters: BakulMaster[];
   role: Role;
-  onAddStockOut: (record: StockOutRecord) => void;
+  onAddStockOut: (record: StockOutRecord | StockOutRecord[]) => void;
   onUpdateStockOut: (index: number, record: StockOutRecord) => void;
+  onUpdateAndResplitStockOut: (deleteIndex: number, recordsToAdd: StockOutRecord[]) => void;
   onDeleteStockOut: (index: number) => void;
 }
 
@@ -44,12 +46,14 @@ const nextId = () => `SO-${++stockOutIdCounter}`;
 export function StockOutTab({
   stockOut,
   stockIn,
+  allStockOut,
   itemNames,
   bakulNames,
   bakulMasters,
   role,
   onAddStockOut,
   onUpdateStockOut,
+  onUpdateAndResplitStockOut,
   onDeleteStockOut,
 }: StockOutTabProps) {
   const [search, setSearch] = useState("");
@@ -73,14 +77,14 @@ export function StockOutTab({
 
 const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
 
-  // === Barang & Harga Modal (COGS) dari Barang Masuk aktif pada tanggal transaksi ===
-  // Setiap transaksi penjualan (Barang Keluar) terhubung dinamis (foreign key) ke Barang
-  // Masuk yang aktif pada tanggal transaksi, sehingga nama barang & harga beli / kg otomatis
-  // mengikuti Barang Masuk hari itu — bukan nyantol ke barang lain (mis. Arwani 1).
-const activeStockIn = resolveActiveStockIn(stockIn, form.date || getTodayDate());
-  const activeItemName = (itemNames[0] || "Ayam") as string;
-  const linkedItemName = activeStockIn?.itemName ?? activeItemName;
-  const activeBuyPrice = activeStockIn?.buyPrice ?? 0;
+  // === [MODIFIKASI] Gunakan resolver baru yang mendapatkan SEMUA batch tersedia (FIFO) ===
+  const availableStockBatches = useMemo(
+    () => resolveAvailableStockBatches(stockIn, allStockOut, form.date || getTodayDate()),
+    [stockIn, allStockOut, form.date]
+  );
+  const firstAvailableBatch = availableStockBatches[0];
+  const linkedItemName = firstAvailableBatch?.record.itemName ?? (itemNames[0] || "Ayam");
+  const totalRemainingStock = availableStockBatches.reduce((sum, batch) => sum + batch.remaining, 0);
 
   // Parse Data Timbangan expression into individual weights.
   // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
@@ -136,24 +140,83 @@ const handleSubmit = (e: React.FormEvent) => {
     const quantity = weighingsTotal;
     if (!bakulName || !itemName || quantity <= 0 || autoPrice <= 0) return;
 
-    const record: StockOutRecord = {
-      id: editingIndex !== null ? stockOut[editingIndex].id : nextId(),
-      date: form.date,
-      bakulName,
-      itemName,
-      quantity,
-      price: autoPrice,
-      buyPrice: activeBuyPrice,
-      stockInId: activeStockIn?.id,
-      saleType: "eceran",
-      weighings: parsedWeighings(),
-      birdCount: form.birdCount ? toNumber(form.birdCount) : undefined,
-    };
-
+    // === [MODIFIKASI TOTAL] Logika Auto-Splitting Penjualan ===
     if (editingIndex !== null) {
-      onUpdateStockOut(editingIndex, record);
+      // --- Mode EDIT: Hapus yang lama, lalu buat ulang dengan logika auto-splitting ---
+      const originalRecord = stockOut[editingIndex];
+      if (quantity > totalRemainingStock + originalRecord.quantity) {
+        alert(`Gagal: Kuantitas penjualan (${shortNumber(quantity)} kg) melebihi total sisa stok yang tersedia.`);
+        return;
+      }
+
+      const newRecords: StockOutRecord[] = [];
+      let remainingQtyToFulfill = quantity;
+
+      for (const batch of availableStockBatches) {
+        if (remainingQtyToFulfill <= 0) break;
+
+        const qtyFromThisBatch = Math.min(remainingQtyToFulfill, batch.remaining);
+
+        // Untuk record pertama, gunakan data timbangan & jumlah ayam. Untuk sisanya, kosongkan.
+        const isFirstSplit = newRecords.length === 0;
+
+        const record: StockOutRecord = {
+          id: nextId(),
+          date: form.date,
+          bakulName,
+          itemName: batch.record.itemName,
+          quantity: qtyFromThisBatch,
+          price: autoPrice,
+          buyPrice: batch.record.buyPrice,
+          stockInId: batch.record.id,
+          saleType: "eceran",
+          weighings: isFirstSplit ? parsedWeighings() : [],
+          birdCount: isFirstSplit && form.birdCount ? toNumber(form.birdCount) : undefined,
+        };
+        newRecords.push(record);
+        remainingQtyToFulfill -= qtyFromThisBatch;
+      }
+
+      // Panggil handler atomik yang baru
+      onUpdateAndResplitStockOut(editingIndex, newRecords);
     } else {
-      onAddStockOut(record);
+      // --- Mode ADD: Logika Auto-Splitting (FIFO) ---
+      if (quantity > totalRemainingStock) {
+        alert(`Gagal: Kuantitas penjualan (${shortNumber(quantity)} kg) melebihi total sisa stok hari ini (${shortNumber(totalRemainingStock)} kg).`);
+        return;
+      }
+
+      const newRecords: StockOutRecord[] = [];
+      let remainingQtyToFulfill = quantity;
+
+      for (const batch of availableStockBatches) {
+        if (remainingQtyToFulfill <= 0) break;
+
+        const qtyFromThisBatch = Math.min(remainingQtyToFulfill, batch.remaining);
+
+        // Untuk record pertama, gunakan data timbangan & jumlah ayam. Untuk sisanya, kosongkan.
+        const isFirstSplit = newRecords.length === 0;
+
+        const record: StockOutRecord = {
+          id: nextId(),
+          date: form.date,
+          bakulName,
+          itemName: batch.record.itemName,
+          quantity: qtyFromThisBatch,
+          price: autoPrice,
+          buyPrice: batch.record.buyPrice,
+          stockInId: batch.record.id,
+          saleType: "eceran",
+          weighings: isFirstSplit ? parsedWeighings() : [],
+          birdCount: isFirstSplit && form.birdCount ? toNumber(form.birdCount) : undefined,
+        };
+        newRecords.push(record);
+        remainingQtyToFulfill -= qtyFromThisBatch;
+      }
+
+      if (newRecords.length > 0) {
+        onAddStockOut(newRecords);
+      }
     }
 
     handleCancelEdit();
@@ -334,15 +397,26 @@ const handleSubmit = (e: React.FormEvent) => {
               </div>
               <Divider className="bg-[#191712]/5" />
               <div className="flex justify-between gap-3 text-xs">
-<span className="font-bold text-[#706858]">Barang Masuk Aktif (tertaut)</span>
-                <span className="font-mono font-black text-[#191712]">
-                  {activeStockIn ? linkedItemName : "—"}
-                </span>
+                <span className="font-bold text-[#706858]">Barang Masuk Aktif (tertaut)</span>
+                <span className="font-mono font-black text-[#191712]">{firstAvailableBatch ? linkedItemName : "—"}</span>
               </div>
               <div className="flex justify-between gap-3 text-xs">
                 <span className="font-bold text-[#706858]">Harga Modal / kg (dari Barang Masuk)</span>
                 <span className="font-mono font-black text-[#8f321a]">
-                  {activeStockIn ? rupiah(activeBuyPrice) : "Rp0"}
+                  {firstAvailableBatch ? rupiah(firstAvailableBatch.record.buyPrice) : "Rp0"}
+                </span>
+              </div>
+              <Divider className="bg-[#191712]/5" />
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="font-bold text-[#706858]">Total Sisa Stok Hari Ini</span>
+                <span
+                  className={`font-mono font-black ${
+                    totalRemainingStock > 0 ? "text-[#1f8f5f]" : "text-[#8f321a]"
+                  }`}
+                >
+                  {availableStockBatches.length > 0
+                    ? `${shortNumber(totalRemainingStock)} kg`
+                    : "Stok Habis"}
                 </span>
               </div>
             </div>
@@ -521,4 +595,3 @@ const handleSubmit = (e: React.FormEvent) => {
     </div>
   );
 }
-

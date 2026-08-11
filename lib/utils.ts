@@ -1,10 +1,5 @@
 import { BakulMaster, BakulRecord, DailySale, ItemMaster, OperationalRecord, PenyusutanRecord, StockInRecord, StockOutRecord } from "@/types/finance";
 
-// === Barang masuk aktif (active Stock In) pada tanggal tertentu ===
-// Logika: dari seluruh Barang Masuk dengan tanggal <= transaksi, pilih yang terbaru
-// (tanggal paling akhir). Barang masuk ini menjadi referensi dinamis (foreign key)
-// untuk transaksi penjualan (Barang Keluar), sehingga Harga Modal (COGS) per unit
-// mengikuti Harga Beli Otomatis / kg Barang Masuk yang aktif pada hari itu.
 export const resolveActiveStockIn = (
   stockIn: StockInRecord[],
   onDate: string
@@ -13,6 +8,75 @@ export const resolveActiveStockIn = (
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => a.date.localeCompare(b.date));
   return candidates[candidates.length - 1];
+};
+
+// === [BARU] FIFO Cerdas: temukan Barang Masuk yang masih punya sisa stok ===
+// Logika:
+// 1. Hitung total keluar untuk setiap batch Barang Masuk (`stockInId`).
+// 2. Saring Barang Masuk pada tanggal transaksi (`onDate`) yang sisanya > 0.
+// 3. Urutkan berdasarkan waktu input (asumsi ID tanggal > kecil = lebih dulu).
+// 4. Kembalikan batch pertama yang tersedia (prinsip First-In, First-Out).
+export const resolveAvailableStock = (
+  allStockIn: StockInRecord[],
+  allStockOut: StockOutRecord[],
+  onDate: string
+): { record: StockInRecord; remaining: number } | null => {
+  // 1. Hitung total keluar per batch (stockInId)
+  const totalOutByStockInId = new Map<string, number>();
+  for (const so of allStockOut) {
+    if (so.stockInId) {
+      totalOutByStockInId.set(so.stockInId, (totalOutByStockInId.get(so.stockInId) ?? 0) + so.quantity);
+    }
+  }
+
+  // 2. Saring batch Barang Masuk pada tanggal `onDate` yang masih punya sisa
+  const availableBatches = allStockIn
+    .filter((si) => si.date === onDate)
+    .map((si) => {
+      const totalOut = totalOutByStockInId.get(si.id) ?? 0;
+      const remaining = si.quantity - totalOut;
+      return { record: si, remaining };
+    })
+    .filter((batch) => batch.remaining > 0);
+
+  // 3. Urutkan kandidat (FIFO - asumsikan ID/waktu input)
+  availableBatches.sort((a, b) => a.record.id.localeCompare(b.record.id));
+
+  // 4. Kembalikan batch pertama yang tersedia
+  return availableBatches[0] ?? null;
+};
+
+// === [BARU] FIFO Cerdas Lanjutan: dapatkan SEMUA batch yang masih punya sisa stok ===
+// Logika: Sama seperti `resolveAvailableStock`, tapi mengembalikan semua batch yang
+// tersedia, bukan hanya yang pertama. Ini penting untuk auto-splitting penjualan.
+export const resolveAvailableStockBatches = (
+  allStockIn: StockInRecord[],
+  allStockOut: StockOutRecord[],
+  onDate: string
+): Array<{ record: StockInRecord; remaining: number }> => {
+  // 1. Hitung total keluar per batch (stockInId)
+  const totalOutByStockInId = new Map<string, number>();
+  for (const so of allStockOut) {
+    if (so.stockInId) {
+      totalOutByStockInId.set(so.stockInId, (totalOutByStockInId.get(so.stockInId) ?? 0) + so.quantity);
+    }
+  }
+
+  // 2. Saring batch Barang Masuk pada tanggal `onDate` yang masih punya sisa
+  const availableBatches = allStockIn
+    .filter((si) => si.date === onDate)
+    .map((si) => {
+      const totalOut = totalOutByStockInId.get(si.id) ?? 0;
+      const remaining = si.quantity - totalOut;
+      return { record: si, remaining };
+    })
+    .filter((batch) => batch.remaining > 0);
+
+  // 3. Urutkan kandidat (FIFO - asumsikan ID/waktu input)
+  availableBatches.sort((a, b) => a.record.id.localeCompare(b.record.id));
+
+  // 4. Kembalikan semua batch yang tersedia
+  return availableBatches;
 };
 
 export const rupiah = (value: number) =>
