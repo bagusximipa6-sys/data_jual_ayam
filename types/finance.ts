@@ -196,6 +196,7 @@ export type DailyReport = {
   totalModal: number;
   totalProfit: number;
   totalOperational: number;
+  totalPenyusutan: number;
   netProfit: number;
   saleBreakdown: SaleBreakdown;
   paymentBreakdown: PaymentBreakdown;
@@ -210,6 +211,7 @@ export type PeriodProfit = {
   totalModal: number;
   totalProfit: number;
   totalOperational: number;
+  totalPenyusutan: number;
   netProfit: number;
   saleBreakdown: SaleBreakdown;
   paymentBreakdown: PaymentBreakdown;

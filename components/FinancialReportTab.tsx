@@ -154,13 +154,16 @@ const buildProfitLoss = (
     opsByDate.set(op.date, (opsByDate.get(op.date) ?? 0) + op.amount);
   }
 
+  const penyusutanByDate = new Map<string, number>();
+  for (const record of penyusutan) {
+    const buyPrice = resolveBuyPrice(record.itemName, record.date) ?? 0;
+    const lossValue = record.amount * buyPrice;
+    penyusutanByDate.set(record.date, (penyusutanByDate.get(record.date) ?? 0) + lossValue);
+  }
+
   // Build daily items from each StockOut record
   const dailyMap = new Map<string, ProfitLossSummary["daily"][number]>();
-  const totalPenyusutanValue = penyusutan.reduce((sum, r) => {
-    // Gunakan harga beli yang berlaku PADA tanggal penyusutan (per-tanggal, bukan harga terbaru).
-    const buyPrice = resolveBuyPrice(r.itemName, r.date) ?? 0;
-    return sum + r.amount * buyPrice;
-  }, 0);
+  const totalPenyusutanValue = Array.from(penyusutanByDate.values()).reduce((sum, value) => sum + value, 0);
 
   const sorted = [...stockOut].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -205,6 +208,7 @@ const existing = dailyMap.get(record.date);
         totalModal: modalCost,
         totalProfit: profit,
         totalOperational: 0,
+        totalPenyusutan: 0,
         netProfit: profit,
         saleBreakdown: breakdown,
         items: [itemRow],
@@ -213,13 +217,32 @@ const existing = dailyMap.get(record.date);
     }
   }
 
-  // Attach operational expense per date & compute net profit
+  for (const date of penyusutanByDate.keys()) {
+    if (dailyMap.has(date)) continue;
+    dailyMap.set(date, {
+      date,
+      totalQuantity: 0,
+      totalOmzet: 0,
+      totalModal: 0,
+      totalProfit: 0,
+      totalOperational: 0,
+      totalPenyusutan: 0,
+      netProfit: 0,
+      saleBreakdown: emptyBreakdown(),
+      items: [],
+      paymentBreakdown: dummyPaymentBreakdown,
+    });
+  }
+
+  // Attach operational expense and nominal penyusutan per date, then compute net profit.
   const daily = Array.from(dailyMap.values()).map((day) => {
     const totalOperational = opsByDate.get(day.date) ?? 0;
+    const totalPenyusutan = penyusutanByDate.get(day.date) ?? 0;
     return {
       ...day,
       totalOperational,
-      netProfit: day.totalProfit - totalOperational,
+      totalPenyusutan,
+      netProfit: day.totalProfit - totalOperational - totalPenyusutan,
     };
   });
 
@@ -255,6 +278,7 @@ const existingWeek = weeklyMap.get(weekKey);
       existingWeek.totalModal += day.totalModal;
       existingWeek.totalProfit += day.totalProfit;
       existingWeek.totalOperational += day.totalOperational;
+      existingWeek.totalPenyusutan += day.totalPenyusutan;
       existingWeek.netProfit += day.netProfit;
       mergeBreakdown(existingWeek.saleBreakdown, day.saleBreakdown);
     } else {
@@ -266,6 +290,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalModal: day.totalModal,
         totalProfit: day.totalProfit,
         totalOperational: day.totalOperational,
+        totalPenyusutan: day.totalPenyusutan,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
         paymentBreakdown: day.paymentBreakdown,
@@ -280,6 +305,7 @@ const existingWeek = weeklyMap.get(weekKey);
       existingMonth.totalModal += day.totalModal;
       existingMonth.totalProfit += day.totalProfit;
       existingMonth.totalOperational += day.totalOperational;
+      existingMonth.totalPenyusutan += day.totalPenyusutan;
       existingMonth.netProfit += day.netProfit;
       mergeBreakdown(existingMonth.saleBreakdown, day.saleBreakdown);
     } else {
@@ -291,6 +317,7 @@ const existingWeek = weeklyMap.get(weekKey);
         totalModal: day.totalModal,
         totalProfit: day.totalProfit,
         totalOperational: day.totalOperational,
+        totalPenyusutan: day.totalPenyusutan,
         netProfit: day.netProfit,
         saleBreakdown: { ...day.saleBreakdown },
         paymentBreakdown: day.paymentBreakdown,
@@ -315,7 +342,7 @@ const existingWeek = weeklyMap.get(weekKey);
 totalProfit: daily.reduce((sum, d) => sum + d.totalProfit, 0),
     totalOperational: daily.reduce((sum, d) => sum + d.totalOperational, 0),
     netProfit: daily.reduce((sum, d) => sum + d.netProfit, 0),
-    netProfitAfterPenyusutan: daily.reduce((sum, d) => sum + d.netProfit, 0) - totalPenyusutanValue,
+    netProfitAfterPenyusutan: daily.reduce((sum, d) => sum + d.netProfit, 0),
     totalPenyusutan: totalPenyusutanValue,
     totalQuantity: daily.reduce((sum, d) => sum + d.totalQuantity, 0),
     saleBreakdown: totalBreakdown,
@@ -332,6 +359,7 @@ const exportProfitCSV = (summary: ProfitLossSummary) => {
       "Total Modal",
       "Total Laba Kotor",
       "Biaya Operasional",
+      "Beban Penyusutan / Loss",
       "Laba Bersih",
       "Qty Eceran",
       "Omzet Eceran",
@@ -345,6 +373,7 @@ const exportProfitCSV = (summary: ProfitLossSummary) => {
       String(d.totalModal),
       String(d.totalProfit),
       String(d.totalOperational),
+      String(d.totalPenyusutan),
       String(d.netProfit),
       String(d.saleBreakdown.eceranQty),
       String(d.saleBreakdown.eceranOmzet),
@@ -390,12 +419,8 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
     ["Total Modal (Harga Beli)", rupiah(summary.totalModal)],
     ["Total Laba Kotor", rupiah(summary.totalProfit)],
     ["Biaya Operasional", rupiah(summary.totalOperational)],
+    ["Beban Penyusutan / Loss", rupiah(summary.totalPenyusutan)],
     ["Laba Bersih", rupiah(summary.netProfit)],
-    [
-      "Laba Bersih Final",
-      rupiah(summary.netProfitAfterPenyusutan),
-      summary.netProfitAfterPenyusutan >= 0 ? "#1f8f5f" : "#8f321a",
-    ],
   ];
 
   const summaryBlockHeight = 8 + summaryLines.length * 7 + 5;
@@ -424,7 +449,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   if (summary.monthly.length > 0) {
     autoTable(doc, {
       startY: lastY + 3,
-      head: [["Periode", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      head: [["Periode", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Susut", "Laba Bersih"]],
       body: summary.monthly.map((row) => [
         row.label,
         shortNumber(row.totalQuantity),
@@ -432,6 +457,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
         rupiah(row.totalModal),
         rupiah(row.totalProfit),
         rupiah(row.totalOperational),
+        rupiah(row.totalPenyusutan),
         rupiah(row.netProfit),
       ]),
       styles: { fontSize: 8 },
@@ -449,7 +475,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   if (summary.weekly.length > 0) {
     autoTable(doc, {
       startY: lastY + 3,
-      head: [["Periode Minggu", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      head: [["Periode Minggu", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Susut", "Laba Bersih"]],
       body: summary.weekly.map((row) => [
         row.label,
         shortNumber(row.totalQuantity),
@@ -457,6 +483,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
         rupiah(row.totalModal),
         rupiah(row.totalProfit),
         rupiah(row.totalOperational),
+        rupiah(row.totalPenyusutan),
         rupiah(row.netProfit),
       ]),
       styles: { fontSize: 8 },
@@ -474,7 +501,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
   if (summary.daily.length > 0) {
     autoTable(doc, {
       startY: lastY + 3,
-      head: [["Tanggal", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Laba Bersih"]],
+      head: [["Tanggal", "Qty (kg)", "Omzet", "Modal", "Laba Kotor", "Ops", "Susut", "Laba Bersih"]],
       body: summary.daily
         .slice()
         .sort((a, b) => b.date.localeCompare(a.date))
@@ -485,6 +512,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
           rupiah(d.totalModal),
           rupiah(d.totalProfit),
           rupiah(d.totalOperational),
+          rupiah(d.totalPenyusutan),
           rupiah(d.netProfit),
         ]),
       styles: { fontSize: 8 },
@@ -581,19 +609,19 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
               tone="red"
             />
             <SummaryCard
-              label="Laba Bersih (Setelah Ops)"
+              label="Beban Penyusutan / Loss"
+              value={rupiah(summary.totalPenyusutan)}
+              tone="red"
+            />
+            <SummaryCard
+              label="Laba Bersih"
               value={rupiah(summary.netProfit)}
               tone={summary.netProfit >= 0 ? "green" : "red"}
             />
             <SummaryCard
-              label="Total Penyusutan"
-              value={rupiah(summary.totalPenyusutan)}
-              tone="yellow"
-            />
-            <SummaryCard
-              label="Laba Bersih (Setelah Penyusutan)"
-              value={rupiah(summary.netProfitAfterPenyusutan)}
-              tone={summary.netProfitAfterPenyusutan >= 0 ? "green" : "red"}
+              label="Rumus Laba Bersih"
+              value="Omzet - Modal - Ops - Susut"
+              tone="plain"
             />
           </div>
 
@@ -628,6 +656,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                       <th className="py-2 pr-4 font-bold text-right">Modal</th>
                       <th className="py-2 pr-4 font-bold text-right">Laba Kotor</th>
                       <th className="py-2 pr-4 font-bold text-right">Ops</th>
+                      <th className="py-2 pr-4 font-bold text-right">Susut</th>
                       <th className="py-2 font-bold text-right">Laba Bersih</th>
                     </tr>
                   </thead>
@@ -640,6 +669,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                         <td className="py-2 pr-4 text-right font-mono">{rupiah(row.totalModal)}</td>
                         <td className="py-2 pr-4 text-right font-mono">{rupiah(row.totalProfit)}</td>
                         <td className="py-2 pr-4 text-right font-mono text-[#8f321a]">{rupiah(row.totalOperational)}</td>
+                        <td className="py-2 pr-4 text-right font-mono text-[#8f321a]">{rupiah(row.totalPenyusutan)}</td>
                         <td
                           className={`py-2 text-right font-mono font-black ${
                             row.netProfit >= 0 ? "text-[#1f8f5f]" : "text-[#8f321a]"
@@ -677,6 +707,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                       <th className="py-2 pr-4 font-bold text-right">Modal</th>
                       <th className="py-2 pr-4 font-bold text-right">Laba Kotor</th>
                       <th className="py-2 pr-4 font-bold text-right">Ops</th>
+                      <th className="py-2 pr-4 font-bold text-right">Susut</th>
                       <th className="py-2 font-bold text-right">Laba Bersih</th>
                     </tr>
                   </thead>
@@ -689,6 +720,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                         <td className="py-2 pr-4 text-right font-mono">{rupiah(row.totalModal)}</td>
                         <td className="py-2 pr-4 text-right font-mono">{rupiah(row.totalProfit)}</td>
                         <td className="py-2 pr-4 text-right font-mono text-[#8f321a]">{rupiah(row.totalOperational)}</td>
+                        <td className="py-2 pr-4 text-right font-mono text-[#8f321a]">{rupiah(row.totalPenyusutan)}</td>
                         <td
                           className={`py-2 text-right font-mono font-black ${
                             row.netProfit >= 0 ? "text-[#1f8f5f]" : "text-[#8f321a]"
@@ -713,9 +745,22 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                   {dateFilter ? `Menampilkan tanggal ${dateFilter}` : "Seluruh tanggal penjualan"} • {filteredDaily.length} hari
                 </p>
               </div>
-              <Chip size="sm" className="bg-[#f0eadb] font-bold text-[#191712]">
-                {filteredDaily.length} Hari
-              </Chip>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  size="sm"
+                  className="w-full sm:w-[180px]"
+                  value={dateFilter}
+                  onValueChange={setDateFilter}
+                  aria-label="Filter Tanggal"
+                  radius="sm"
+                  isClearable
+                  onClear={() => setDateFilter("")}
+                />
+                <Chip size="sm" className="bg-[#f0eadb] font-bold text-[#191712]">
+                  {filteredDaily.length} Hari
+                </Chip>
+              </div>
             </div>
             <Divider className="bg-[#191712]/5" />
             {filteredDaily.length === 0 ? (
@@ -741,6 +786,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                           <p className="text-[10px] text-[#706858] font-bold">
                             Laba Kotor: <span className={day.totalProfit >= 0 ? "text-[#1f8f5f]" : "text-[#8f321a]"}>{rupiah(day.totalProfit)}</span>
                             {" • "}Ops: <span className="text-[#8f321a]">{rupiah(day.totalOperational)}</span>
+                            {" • "}Susut: <span className="text-[#8f321a]">{rupiah(day.totalPenyusutan)}</span>
                             {" • "}Laba Bersih: <span className={day.netProfit >= 0 ? "text-[#1f8f5f]" : "text-[#8f321a]"}>{rupiah(day.netProfit)}</span>
                           </p>
                         </div>
@@ -757,6 +803,17 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                       </div>
 
                       <div className="mt-3 space-y-1">
+                        {day.totalPenyusutan > 0 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
+                            <div>
+                              <span className="font-bold text-[#191712]">Beban Penyusutan / Loss</span>
+                              <span className="text-[#706858]"> • nilai susut barang pada tanggal ini</span>
+                            </div>
+                            <div className="text-right font-mono font-black text-[#8f321a]">
+                              -{rupiah(day.totalPenyusutan)}
+                            </div>
+                          </div>
+                        )}
                         {day.items.map((item, idx) => (
                           <div
                             key={item.id ?? `${item.date}-${item.itemName}-${item.bakulName}-${idx}`}
@@ -801,10 +858,9 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
         <Download size={15} className="mt-0.5 shrink-0" />
 <p>
 <strong>Rumus:</strong> Pendapatan Harian = (Total Stok Keluar × Harga Jual) − (Total Stok Keluar × Harga
-          Beli). Harga Beli diambil dari snapshot yang tersimpan pada transaksi Barang Keluar; jika tidak ada,
-          dipakai harga Barang Masuk yang berlaku pada tanggal transaksi tersebut (date-aware), sehingga mengubah
-          harga di Master Barang TIDAK mengubah laporan periode lampau. Jika belum ada data Barang Masuk, modal
-          dihitung Rp0.
+          Beli). Laba Bersih = Total Penjualan − Total Modal Beli − Total Operasional − Beban Penyusutan / Loss.
+          Beban penyusutan dihitung dari total kg penyusutan dikali Harga Beli pada tanggal penyusutan. Jika belum
+          ada data Barang Masuk, modal dan nilai susut dihitung Rp0.
         </p>
       </div>
     </div>
