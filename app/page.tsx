@@ -964,23 +964,6 @@ setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
                   </div>
                 </div>
               )}
-
-              {/* Per-item Summary */}
-              {dailyItemSummary.length > 0 && (
-                <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm space-y-3">
-                  <h3 className="font-black text-sm text-[#191712]">Rekap Per Barang</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {dailyItemSummary.map(([name, { qty, omzet }]) => (
-                      <span
-                        key={name}
-                        className="inline-flex items-center gap-2 rounded-full bg-[#f7f5ef] border border-[#191712]/10 px-3 py-1.5 text-xs font-bold"
-                      >
-                        {name}: {shortNumber(qty)} kg • {rupiah(omzet)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

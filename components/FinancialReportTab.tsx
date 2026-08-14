@@ -525,7 +525,7 @@ doc.text("Buku Keuangan Usaha - Data Jual Ayam", 14, 22);
 };
 
 export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], role }: FinancialReportTabProps) {
-  const [dateFilter, setDateFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState(getTodayDate());
   const isAdmin = role === "admin";
 
   const summary = useMemo(
@@ -534,7 +534,9 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
   );
 
   const filteredDaily = useMemo(() => {
-    if (!dateFilter) return summary.daily;
+    // Jika filter tanggal kosong (misal setelah di-clear), tampilkan array kosong
+    // agar tidak ada data yang muncul, sesuai permintaan.
+    if (!dateFilter) return [];
     return summary.daily.filter((d) => d.date === dateFilter);
   }, [summary.daily, dateFilter]);
 
@@ -549,17 +551,6 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
           </p>
         </div>
 <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="date"
-            size="sm"
-            className="w-full sm:w-[180px]"
-            value={dateFilter}
-            onValueChange={setDateFilter}
-            aria-label="Filter Tanggal"
-            radius="sm"
-            isClearable
-            onClear={() => setDateFilter("")}
-          />
 <Button
             size="sm"
             className="bg-[#191712] font-bold text-white"
@@ -742,7 +733,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
               <div>
                 <h3 className="text-lg font-black text-[#191712]">Pendapatan Harian</h3>
                 <p className="text-xs text-[#706858]">
-                  {dateFilter ? `Menampilkan tanggal ${dateFilter}` : "Seluruh tanggal penjualan"} • {filteredDaily.length} hari
+                  {dateFilter ? `Menampilkan tanggal ${dateFilter}` : "Pilih tanggal untuk melihat detail"} • {filteredDaily.length} hari
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -755,7 +746,7 @@ export function FinancialReportTab({ stockOut, stockIn, ops, penyusutan = [], ro
                   aria-label="Filter Tanggal"
                   radius="sm"
                   isClearable
-                  onClear={() => setDateFilter("")}
+                  onClear={() => setDateFilter("")} // Mengosongkan filter akan menyembunyikan semua data
                 />
                 <Chip size="sm" className="bg-[#f0eadb] font-bold text-[#191712]">
                   {filteredDaily.length} Hari
