@@ -5,7 +5,7 @@ import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getMonthLabel, rupiah, shortNumber } from "@/lib/utils";
+import { getMonthLabel, rupiah, shortNumber, getTodayDate } from "@/lib/utils";
 import {  
   OperationalRecord,
   PenyusutanRecord,
