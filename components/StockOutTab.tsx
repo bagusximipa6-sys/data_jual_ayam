@@ -110,9 +110,9 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
 
   useEffect(() => {
     if (form.stockMode === "auto") return;
-    const selectedStillExists = stockSourceOptions.some((option) => option.key === form.stockInId);
+    const selectedOption = stockSourceOptions.find((option) => option.key === form.stockInId);
     const nextAvailable = stockSourceOptions.find((option) => option.batch.remaining > 0);
-    if (!selectedStillExists && nextAvailable) {
+    if ((!selectedOption || selectedOption.batch.remaining <= 0) && nextAvailable) {
       setForm((prev) => ({ ...prev, stockInId: nextAvailable.key }));
     }
   }, [form.stockInId, form.stockMode, stockSourceOptions]);

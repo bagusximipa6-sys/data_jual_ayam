@@ -137,6 +137,40 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
     return getTodayDate();
   });
 
+  const reconcileStockOutLinks = useCallback(
+    (incomingStockIn: StockInRecord[], incomingStockOut: StockOutRecord[]): StockOutRecord[] => {
+      const stockInById = new Map(incomingStockIn.map((record) => [record.id, record]));
+      return incomingStockOut.map((record) => {
+        if (!record.stockInId) return record;
+        const linked = stockInById.get(record.stockInId);
+        if (!linked) return record;
+        return {
+          ...record,
+          itemName: linked.itemName,
+          buyPrice: linked.buyPrice,
+        };
+      });
+    },
+    []
+  );
+
+  const applyDatasetToState = useCallback(
+    (data: LocalDataset) => {
+      const nextStockIn = data.stockIn ?? [];
+      setSales(data.sales ?? []);
+      setBakulRecords(data.bakulRecords ?? []);
+      setOps(data.ops ?? []);
+      setItems(data.items ?? []);
+      setBakulMasters(data.bakulMasters ?? []);
+      setStockIn(nextStockIn);
+      setStockOut(reconcileStockOutLinks(nextStockIn, data.stockOut ?? []));
+      setOpsCategories(data.opsCategories ?? []);
+      setPenyusutan(data.penyusutan ?? []);
+      setPriceHistory(data.priceHistory ?? []);
+    },
+    [reconcileStockOutLinks]
+  );
+
 // JSON Import & Reset
   // Menerima data mentah (bisa dari backup lama), menormalisasi ke skema baru,
   // menyimpan ke state, lalu sinkronkan ke server dengan `force` agar data
@@ -171,16 +205,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
       };
 
       // Update state lokal.
-      setSales(final.sales);
-      setBakulRecords(final.bakulRecords);
-      setOps(final.ops);
-      setItems(final.items);
-      setBakulMasters(final.bakulMasters);
-      setStockIn(final.stockIn);
-      setStockOut(final.stockOut);
-      setOpsCategories(final.opsCategories);
-      setPenyusutan(final.penyusutan);
-      setPriceHistory(final.priceHistory);
+      applyDatasetToState(final as LocalDataset);
 
       // Sinkronkan ke server dengan force (restore penuh).
       setSyncStatus("saving");
@@ -188,7 +213,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
       setSyncStatus(result.ok ? "saved" : "error");
       return result;
     },
-    []
+    [applyDatasetToState]
   );
 
 // === Alur Pengawasan: catat setiap aksi Tambah/Edit/Hapus ke server ===
@@ -543,16 +568,14 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
 // Prioritas 2: Barang Masuk aktif pada tanggal transaksi (date-aware).
 // Prioritas 3: harga beli master / snapshot.
 const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPrice: number; stockInId?: string } => {
-  // [MODIFIKASI] Gunakan resolver baru yang memeriksa sisa stok (FIFO).
-  const availableStock = resolveAvailableStock(stockIn, stockOut, record.date);
-  const linked = availableStock ? stockIn.find((si) => si.id === record.stockInId) : undefined;
-
   // Jika transaksi tertaut ke Barang Masuk: pakai barang & harga beli dari sana.
+  const linked = record.stockInId ? stockIn.find((si) => si.id === record.stockInId) : undefined;
   if (record.stockInId && linked) {
     return { itemName: linked.itemName, buyPrice: linked.buyPrice, stockInId: linked.id };
   }
 
   // Jika belum tertaut tapi ada Barang Masuk yang TERSEDIA pada tanggal itu: tautkan.
+  const availableStock = resolveAvailableStock(stockIn, stockOut, record.date, [record.id]);
   if (availableStock) {
     return { itemName: availableStock.record.itemName, buyPrice: availableStock.record.buyPrice, stockInId: availableStock.record.id };
   }

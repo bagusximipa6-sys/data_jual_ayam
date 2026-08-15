@@ -124,16 +124,25 @@ export function normalizeImportData(raw: unknown): NormalizedDataset | null {
   );
 
   // --- Sinkronisasi relasi: StockOut -> StockIn ---
-  // Jalin referensi dinamis (foreign key) untuk setiap transaksi penjualan:
-  // barang & harga beli (COGS) diambil dari Barang Masuk yang aktif pada
-  // tanggal transaksi, supaya laporan modal akurat dan tidak "nyantol".
+  // Backup lama belum punya `stockInId`, jadi tautkan ke stok aktif.
+  // Untuk data baru, pertahankan pilihan sumber stok yang sudah tersimpan.
   if (stockIn.length > 0) {
+    const stockInById = new Map(stockIn.map((si) => [si.id, si]));
     for (const so of stockOut) {
-      const active = resolveActiveStockIn(stockIn, so.date);
-      if (active) {
-        so.stockInId = active.id;
-        so.itemName = active.itemName;
-        if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = active.buyPrice;
+      const linked = so.stockInId ? stockInById.get(so.stockInId) : undefined;
+      if (linked) {
+        so.itemName = linked.itemName;
+        if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = linked.buyPrice;
+        continue;
+      }
+
+      if (!so.stockInId) {
+        const active = resolveActiveStockIn(stockIn, so.date);
+        if (active) {
+          so.stockInId = active.id;
+          so.itemName = active.itemName;
+          if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = active.buyPrice;
+        }
       }
     }
   }
