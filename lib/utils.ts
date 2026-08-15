@@ -19,31 +19,49 @@ export const resolveActiveStockIn = (
 export const resolveAvailableStock = (
   allStockIn: StockInRecord[],
   allStockOut: StockOutRecord[],
-  onDate: string
+  onDate: string,
+  ignoredStockOutIds: Iterable<string> = []
 ): { record: StockInRecord; remaining: number } | null => {
-  // 1. Hitung total keluar per batch (stockInId)
+  return resolveStockBatches(allStockIn, allStockOut, onDate, ignoredStockOutIds).find(
+    (batch) => batch.remaining > 0
+  ) ?? null;
+};
+
+export const resolveStockBatches = (
+  allStockIn: StockInRecord[],
+  allStockOut: StockOutRecord[],
+  onDate: string,
+  ignoredStockOutIds: Iterable<string> = []
+): Array<{ record: StockInRecord; remaining: number; totalOut: number }> => {
+  const ignoredIds = new Set(ignoredStockOutIds);
+  const batches = allStockIn
+    .filter((si) => si.date === onDate)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
   const totalOutByStockInId = new Map<string, number>();
+  const legacyOutByItemName = new Map<string, number>();
+
   for (const so of allStockOut) {
+    if (ignoredIds.has(so.id) || so.date !== onDate) continue;
+
     if (so.stockInId) {
       totalOutByStockInId.set(so.stockInId, (totalOutByStockInId.get(so.stockInId) ?? 0) + so.quantity);
+    } else {
+      const key = so.itemName.toLowerCase();
+      legacyOutByItemName.set(key, (legacyOutByItemName.get(key) ?? 0) + so.quantity);
     }
   }
 
-  // 2. Saring batch Barang Masuk pada tanggal `onDate` yang masih punya sisa
-  const availableBatches = allStockIn
-    .filter((si) => si.date === onDate)
-    .map((si) => {
-      const totalOut = totalOutByStockInId.get(si.id) ?? 0;
-      const remaining = si.quantity - totalOut;
-      return { record: si, remaining };
-    })
-    .filter((batch) => batch.remaining > 0);
-
-  // 3. Urutkan kandidat (FIFO - asumsikan ID/waktu input)
-  availableBatches.sort((a, b) => a.record.id.localeCompare(b.record.id));
-
-  // 4. Kembalikan batch pertama yang tersedia
-  return availableBatches[0] ?? null;
+  return batches.map((record) => {
+    const linkedOut = totalOutByStockInId.get(record.id) ?? 0;
+    const legacyOut = legacyOutByItemName.get(record.itemName.toLowerCase()) ?? 0;
+    const totalOut = linkedOut + legacyOut;
+    return {
+      record,
+      totalOut,
+      remaining: Math.max(0, record.quantity - totalOut),
+    };
+  });
 };
 
 // === [BARU] FIFO Cerdas Lanjutan: dapatkan SEMUA batch yang masih punya sisa stok ===
@@ -52,31 +70,12 @@ export const resolveAvailableStock = (
 export const resolveAvailableStockBatches = (
   allStockIn: StockInRecord[],
   allStockOut: StockOutRecord[],
-  onDate: string
+  onDate: string,
+  ignoredStockOutIds: Iterable<string> = []
 ): Array<{ record: StockInRecord; remaining: number }> => {
-  // 1. Hitung total keluar per batch (stockInId)
-  const totalOutByStockInId = new Map<string, number>();
-  for (const so of allStockOut) {
-    if (so.stockInId) {
-      totalOutByStockInId.set(so.stockInId, (totalOutByStockInId.get(so.stockInId) ?? 0) + so.quantity);
-    }
-  }
-
-  // 2. Saring batch Barang Masuk pada tanggal `onDate` yang masih punya sisa
-  const availableBatches = allStockIn
-    .filter((si) => si.date === onDate)
-    .map((si) => {
-      const totalOut = totalOutByStockInId.get(si.id) ?? 0;
-      const remaining = si.quantity - totalOut;
-      return { record: si, remaining };
-    })
-    .filter((batch) => batch.remaining > 0);
-
-  // 3. Urutkan kandidat (FIFO - asumsikan ID/waktu input)
-  availableBatches.sort((a, b) => a.record.id.localeCompare(b.record.id));
-
-  // 4. Kembalikan semua batch yang tersedia
-  return availableBatches;
+  return resolveStockBatches(allStockIn, allStockOut, onDate, ignoredStockOutIds).filter(
+    (batch) => batch.remaining > 0
+  );
 };
 
 export const rupiah = (value: number) =>

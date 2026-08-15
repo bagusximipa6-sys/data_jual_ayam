@@ -15,8 +15,8 @@ import {
   Textarea,
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
-import { useMemo, useState } from "react";
-import { getTodayDate, resolveAvailableStockBatches, rupiah, shortNumber, toNumber } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
+import { getTodayDate, resolveAvailableStockBatches, resolveStockBatches, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
 
@@ -67,6 +67,8 @@ export function StockOutTab({
     date: getTodayDate(),
     bakulName: bakulNames[0] || "",
     birdCount: "",
+    stockMode: "auto",
+    stockInId: "",
   });
   const [weighingsInput, setWeighingsInput] = useState("");
 
@@ -78,13 +80,42 @@ export function StockOutTab({
 const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
 
   // === [MODIFIKASI] Gunakan resolver baru yang mendapatkan SEMUA batch tersedia (FIFO) ===
+  const ignoredStockOutIds = useMemo(
+    () => (editingIndex !== null && stockOut[editingIndex] ? [stockOut[editingIndex].id] : []),
+    [editingIndex, stockOut]
+  );
+
+  const stockBatches = useMemo(
+    () => resolveStockBatches(stockIn, allStockOut, form.date || getTodayDate(), ignoredStockOutIds),
+    [stockIn, allStockOut, form.date, ignoredStockOutIds]
+  );
+
   const availableStockBatches = useMemo(
-    () => resolveAvailableStockBatches(stockIn, allStockOut, form.date || getTodayDate()),
-    [stockIn, allStockOut, form.date]
+    () => resolveAvailableStockBatches(stockIn, allStockOut, form.date || getTodayDate(), ignoredStockOutIds),
+    [stockIn, allStockOut, form.date, ignoredStockOutIds]
   );
   const firstAvailableBatch = availableStockBatches[0];
-  const linkedItemName = firstAvailableBatch?.record.itemName ?? (itemNames[0] || "Ayam");
   const totalRemainingStock = availableStockBatches.reduce((sum, batch) => sum + batch.remaining, 0);
+  const stockSourceOptions = useMemo(
+    () =>
+      stockBatches.map((batch, index) => ({
+        key: batch.record.id,
+        label: `Barang ${String.fromCharCode(65 + index)}`,
+        batch,
+      })),
+    [stockBatches]
+  );
+  const selectedStockOption = stockSourceOptions.find((option) => option.key === form.stockInId);
+  const isAutoStockMode = form.stockMode === "auto";
+
+  useEffect(() => {
+    if (form.stockMode === "auto") return;
+    const selectedStillExists = stockSourceOptions.some((option) => option.key === form.stockInId);
+    const nextAvailable = stockSourceOptions.find((option) => option.batch.remaining > 0);
+    if (!selectedStillExists && nextAvailable) {
+      setForm((prev) => ({ ...prev, stockInId: nextAvailable.key }));
+    }
+  }, [form.stockInId, form.stockMode, stockSourceOptions]);
 
   // Parse Data Timbangan expression into individual weights.
   // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
@@ -114,6 +145,8 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
       date: item.date,
       bakulName: item.bakulName,
       birdCount: item.birdCount != null ? String(item.birdCount) : "",
+      stockMode: "manual",
+      stockInId: item.stockInId ?? "",
     });
     setWeighingsInput(
       (item.weighings ?? [])
@@ -129,6 +162,8 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
       date: getTodayDate(),
       bakulName: bakulNames[0] || "",
       birdCount: "",
+      stockMode: "auto",
+      stockInId: "",
     });
     setWeighingsInput("");
   };
@@ -136,87 +171,66 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
 const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const bakulName = form.bakulName.trim();
-    const itemName = editingIndex !== null ? stockOut[editingIndex].itemName : linkedItemName;
     const quantity = weighingsTotal;
-    if (!bakulName || !itemName || quantity <= 0 || autoPrice <= 0) return;
+    if (!bakulName || quantity <= 0 || autoPrice <= 0) return;
 
-    // === [MODIFIKASI TOTAL] Logika Auto-Splitting Penjualan ===
-    if (editingIndex !== null) {
-      // --- Mode EDIT: Hapus yang lama, lalu buat ulang dengan logika auto-splitting ---
-      const originalRecord = stockOut[editingIndex];
-      if (quantity > totalRemainingStock + originalRecord.quantity) {
-        alert(`Gagal: Kuantitas penjualan (${shortNumber(quantity)} kg) melebihi total sisa stok yang tersedia.`);
-        return;
-      }
+    const buildStockOutRecord = (
+      batch: { record: StockInRecord; remaining: number },
+      batchQuantity: number,
+      isFirstSplit: boolean
+    ): StockOutRecord => ({
+      id: nextId(),
+      date: form.date,
+      bakulName,
+      itemName: batch.record.itemName,
+      quantity: batchQuantity,
+      price: autoPrice,
+      buyPrice: batch.record.buyPrice,
+      stockInId: batch.record.id,
+      saleType: "eceran",
+      weighings: isFirstSplit ? parsedWeighings() : [],
+      birdCount: isFirstSplit && form.birdCount ? toNumber(form.birdCount) : undefined,
+    });
 
-      const newRecords: StockOutRecord[] = [];
-      let remainingQtyToFulfill = quantity;
-
-      for (const batch of availableStockBatches) {
-        if (remainingQtyToFulfill <= 0) break;
-
-        const qtyFromThisBatch = Math.min(remainingQtyToFulfill, batch.remaining);
-
-        // Untuk record pertama, gunakan data timbangan & jumlah ayam. Untuk sisanya, kosongkan.
-        const isFirstSplit = newRecords.length === 0;
-
-        const record: StockOutRecord = {
-          id: nextId(),
-          date: form.date,
-          bakulName,
-          itemName: batch.record.itemName,
-          quantity: qtyFromThisBatch,
-          price: autoPrice,
-          buyPrice: batch.record.buyPrice,
-          stockInId: batch.record.id,
-          saleType: "eceran",
-          weighings: isFirstSplit ? parsedWeighings() : [],
-          birdCount: isFirstSplit && form.birdCount ? toNumber(form.birdCount) : undefined,
-        };
-        newRecords.push(record);
-        remainingQtyToFulfill -= qtyFromThisBatch;
-      }
-
-      // Panggil handler atomik yang baru
-      onUpdateAndResplitStockOut(editingIndex, newRecords);
-    } else {
-      // --- Mode ADD: Logika Auto-Splitting (FIFO) ---
+    const buildAutoSplitRecords = (): StockOutRecord[] | null => {
       if (quantity > totalRemainingStock) {
         alert(`Gagal: Kuantitas penjualan (${shortNumber(quantity)} kg) melebihi total sisa stok hari ini (${shortNumber(totalRemainingStock)} kg).`);
-        return;
+        return null;
       }
-
       const newRecords: StockOutRecord[] = [];
       let remainingQtyToFulfill = quantity;
 
       for (const batch of availableStockBatches) {
         if (remainingQtyToFulfill <= 0) break;
-
         const qtyFromThisBatch = Math.min(remainingQtyToFulfill, batch.remaining);
-
-        // Untuk record pertama, gunakan data timbangan & jumlah ayam. Untuk sisanya, kosongkan.
-        const isFirstSplit = newRecords.length === 0;
-
-        const record: StockOutRecord = {
-          id: nextId(),
-          date: form.date,
-          bakulName,
-          itemName: batch.record.itemName,
-          quantity: qtyFromThisBatch,
-          price: autoPrice,
-          buyPrice: batch.record.buyPrice,
-          stockInId: batch.record.id,
-          saleType: "eceran",
-          weighings: isFirstSplit ? parsedWeighings() : [],
-          birdCount: isFirstSplit && form.birdCount ? toNumber(form.birdCount) : undefined,
-        };
-        newRecords.push(record);
+        newRecords.push(buildStockOutRecord(batch, qtyFromThisBatch, newRecords.length === 0));
         remainingQtyToFulfill -= qtyFromThisBatch;
       }
+      return newRecords;
+    };
 
-      if (newRecords.length > 0) {
-        onAddStockOut(newRecords);
+    const buildManualRecord = (): StockOutRecord[] | null => {
+      const source = stockBatches.find((batch) => batch.record.id === form.stockInId);
+      const sourceLabel =
+        stockSourceOptions.find((option) => option.key === form.stockInId)?.label ?? "Sumber stok";
+      if (!source) {
+        alert("Stok sumber tidak ditemukan. Silakan pilih sumber stok lain.");
+        return null;
       }
+      if (quantity > source.remaining) {
+        alert(`Stok ${sourceLabel} tidak mencukupi/sudah habis. Silakan pilih sumber stok lain.`);
+        return null;
+      }
+      return [buildStockOutRecord(source, quantity, true)];
+    };
+
+    const newRecords = isAutoStockMode ? buildAutoSplitRecords() : buildManualRecord();
+    if (!newRecords || newRecords.length === 0) return;
+
+    if (editingIndex !== null) {
+      onUpdateAndResplitStockOut(editingIndex, newRecords);
+    } else {
+      onAddStockOut(newRecords);
     }
 
     handleCancelEdit();
@@ -224,8 +238,8 @@ const handleSubmit = (e: React.FormEvent) => {
 
   // Riwayat disaring berdasarkan tanggal terpilih (historyDate), dikombinasikan dengan pencarian teks.
   const filteredRecords = stockOut
-    .filter((item) => item.date === historyDate)
     .map((item, originalIndex) => ({ item, originalIndex }))
+    .filter(({ item }) => item.date === historyDate)
     .filter(({ item }) => {
       if (!search.trim()) return true;
       const query = search.toLowerCase();
@@ -335,6 +349,79 @@ const handleSubmit = (e: React.FormEvent) => {
             )}
           </div>
 
+          <div className="space-y-2 rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3">
+            <div className="grid gap-2 sm:grid-cols-[0.8fr_1.2fr]">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#191712]">Mode Stok</label>
+                <Select
+                  aria-label="Pilih Mode Stok"
+                  selectedKeys={[form.stockMode]}
+                  onSelectionChange={(keys) => {
+                    const selected = String(Array.from(keys)[0] ?? "auto");
+                    setForm((prev) => ({
+                      ...prev,
+                      stockMode: selected,
+                      stockInId:
+                        selected === "manual"
+                          ? prev.stockInId || firstAvailableBatch?.record.id || ""
+                          : "",
+                    }));
+                  }}
+                  radius="sm"
+                >
+                  <SelectItem key="auto">Otomatis FIFO</SelectItem>
+                  <SelectItem key="manual">Pilih Sumber</SelectItem>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#191712]">Asal Stok</label>
+                <Select
+                  aria-label="Pilih Asal Stok"
+                  placeholder={isAutoStockMode ? "Auto-switch FIFO aktif" : "Pilih sumber stok"}
+                  selectedKeys={!isAutoStockMode && form.stockInId ? [form.stockInId] : []}
+                  onSelectionChange={(keys) => {
+                    const selected = String(Array.from(keys)[0] ?? "");
+                    setForm((prev) => ({ ...prev, stockInId: selected }));
+                  }}
+                  radius="sm"
+                  isDisabled={isAutoStockMode || stockSourceOptions.length === 0}
+                  disabledKeys={stockSourceOptions
+                    .filter((option) => option.batch.remaining <= 0)
+                    .map((option) => option.key)}
+                >
+                  {stockSourceOptions.map((option) => (
+                    <SelectItem key={option.key}>
+                      {option.label} (Sisa: {shortNumber(option.batch.remaining)} kg)
+                      {option.batch.remaining <= 0 ? " - Nonaktif" : " - Aktif"}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {stockSourceOptions.length === 0 ? (
+                <span className="text-[11px] font-medium text-amber-700">
+                  Belum ada stok masuk pada tanggal ini.
+                </span>
+              ) : (
+                stockSourceOptions.map((option) => (
+                  <span
+                    key={option.key}
+                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                      option.batch.remaining > 0
+                        ? "border-[#1f8f5f]/20 bg-white text-[#1f8f5f]"
+                        : "border-[#8f321a]/20 bg-[#ffe2d8] text-[#8f321a]"
+                    }`}
+                  >
+                    {option.label}: {shortNumber(option.batch.remaining)} kg
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-[#191712]/10 bg-[#f7f5ef] p-3 space-y-2">
             <div className="flex items-center gap-1.5">
               <Scale size={14} className="text-[#706858]" />
@@ -397,13 +484,25 @@ const handleSubmit = (e: React.FormEvent) => {
               </div>
               <Divider className="bg-[#191712]/5" />
               <div className="flex justify-between gap-3 text-xs">
-                <span className="font-bold text-[#706858]">Barang Masuk Aktif (tertaut)</span>
-                <span className="font-mono font-black text-[#191712]">{firstAvailableBatch ? linkedItemName : "—"}</span>
+                <span className="font-bold text-[#706858]">Sumber Stok Aktif</span>
+                <span className="font-mono font-black text-[#191712]">
+                  {isAutoStockMode
+                    ? firstAvailableBatch
+                      ? "Otomatis FIFO"
+                      : "-"
+                    : selectedStockOption?.label ?? "-"}
+                </span>
               </div>
               <div className="flex justify-between gap-3 text-xs">
                 <span className="font-bold text-[#706858]">Harga Modal / kg (dari Barang Masuk)</span>
                 <span className="font-mono font-black text-[#8f321a]">
-                  {firstAvailableBatch ? rupiah(firstAvailableBatch.record.buyPrice) : "Rp0"}
+                  {isAutoStockMode
+                    ? firstAvailableBatch
+                      ? rupiah(firstAvailableBatch.record.buyPrice)
+                      : "Rp0"
+                    : selectedStockOption
+                      ? rupiah(selectedStockOption.batch.record.buyPrice)
+                      : "Rp0"}
                 </span>
               </div>
               <Divider className="bg-[#191712]/5" />
