@@ -652,16 +652,15 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     const recordToDelete = stockOut[index]; // prettier-ignore
     if (!recordToDelete || isRecordLocked(recordToDelete.date)) return;
 
-    // Cek apakah record ini adalah bagian dari "split" (punya birdCount).
-    // Jika ya, kita harus menghapus semua record lain yang berasal dari split yang sama,
-    // tidak peduli apakah yang diklik adalah record "induk" atau "anak".
-    const isSplitMember = recordToDelete.birdCount != null;
+    const splitGroupId = recordToDelete.stockOutGroupId;
+    const isSplitMember = Boolean(splitGroupId) || recordToDelete.birdCount != null;
 
     if (isSplitMember) {
-      // Ini adalah bagian dari sebuah split. Temukan semua record dalam grup yang sama.
-      // Asumsi: semua record dalam satu split memiliki tanggal, nama bakul, dan jumlah ayam (birdCount) yang sama.
       const recordsToDelete = stockOut.filter(
-        (r) => r.date === recordToDelete.date && r.bakulName === recordToDelete.bakulName && r.birdCount === recordToDelete.birdCount
+        (r) =>
+          splitGroupId
+            ? r.stockOutGroupId === splitGroupId
+            : r.date === recordToDelete.date && r.bakulName === recordToDelete.bakulName && r.birdCount === recordToDelete.birdCount
       );
       const idsToDelete = new Set(recordsToDelete.map((r) => r.id));
       const notesToDelete = new Set(recordsToDelete.map((r) => stockOutPiutangNote(r.id)));
@@ -684,12 +683,17 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     const deletedRecord = stockOut[deleteIndex];
     if (!deletedRecord || isRecordLocked(deletedRecord.date)) return;
 
-    const deletedNote = stockOutPiutangNote(deletedRecord.id);
+    const splitGroupId = deletedRecord.stockOutGroupId;
+    const recordsToDelete = splitGroupId
+      ? stockOut.filter((r) => r.stockOutGroupId === splitGroupId)
+      : [deletedRecord];
+    const idsToDelete = new Set(recordsToDelete.map((r) => r.id));
+    const notesToDelete = new Set(recordsToDelete.map((r) => stockOutPiutangNote(r.id)));
 
     // Gabungkan state update dalam satu panggilan untuk menghindari race condition
-    setStockOut((prev) => [...prev.filter((_, i) => i !== deleteIndex), ...recordsToAdd]);
+    setStockOut((prev) => [...prev.filter((r, i) => i !== deleteIndex && !idsToDelete.has(r.id)), ...recordsToAdd]);
     const piutangToAdd = recordsToAdd.map(stockOutToBakulRecord);
-    setBakulRecords((prev) => [...prev.filter((br) => br.note !== deletedNote), ...piutangToAdd]);
+    setBakulRecords((prev) => [...prev.filter((br) => !notesToDelete.has(br.note)), ...piutangToAdd]);
 
     for (const r of recordsToAdd) {
       recordActivity("add", "Barang Keluar (dari Edit)", r.id, `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`);

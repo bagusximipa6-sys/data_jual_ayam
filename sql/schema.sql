@@ -7,17 +7,21 @@
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  sell_price NUMERIC NOT NULL DEFAULT 0,
+  buy_price NUMERIC NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE items ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0;
 
 -- Tabel: Master Pelanggan / Bakul
 CREATE TABLE IF NOT EXISTS bakul_masters (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  address TEXT DEFAULT '',
+  sell_price NUMERIC NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE bakul_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC NOT NULL DEFAULT 0;
 
 -- Tabel: Barang Masuk (Stock In)
 CREATE TABLE IF NOT EXISTS stock_in (
@@ -56,6 +60,7 @@ ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_in_id TEXT DEFAULT '';
+ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_out_group_id TEXT DEFAULT '';
 
 -- Tabel: Riwayat Harga (Price History)
 -- Mencatat setiap perubahan harga beli & jual per barang, berbasis tanggal efektif (ISO YYYY-MM-DD).

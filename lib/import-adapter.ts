@@ -39,8 +39,48 @@ const num = (v: unknown): number => {
 
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
 
-const bool = (v: unknown, defaultValue = false): boolean =>
-  typeof v === "boolean" ? v : defaultValue;
+const assignMissingStockOutLinks = (stockIn: StockInRecord[], stockOut: StockOutRecord[]) => {
+  const stockInById = new Map(stockIn.map((si) => [si.id, si]));
+  const stockInByDate = new Map<string, StockInRecord[]>();
+  const usedByStockInId = new Map<string, number>();
+
+  for (const si of stockIn) {
+    const list = stockInByDate.get(si.date) ?? [];
+    list.push(si);
+    stockInByDate.set(si.date, list);
+  }
+  for (const list of stockInByDate.values()) {
+    list.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  const sortedStockOut = [...stockOut].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
+  for (const so of sortedStockOut) {
+    const linked = so.stockInId ? stockInById.get(so.stockInId) : undefined;
+    if (linked) {
+      so.itemName = linked.itemName;
+      if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = linked.buyPrice;
+      usedByStockInId.set(linked.id, (usedByStockInId.get(linked.id) ?? 0) + so.quantity);
+      continue;
+    }
+
+    const sameDate = stockInByDate.get(so.date) ?? [];
+    const sameItem = sameDate.filter((si) => si.itemName.toLowerCase() === so.itemName.toLowerCase());
+    const candidates = sameItem.length > 0 ? sameItem : sameDate;
+    const target = candidates.find((si) => {
+      const used = usedByStockInId.get(si.id) ?? 0;
+      return used < si.quantity;
+    });
+
+    const active = target ?? resolveActiveStockIn(stockIn, so.date);
+    if (active) {
+      so.stockInId = active.id;
+      so.itemName = active.itemName;
+      if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = active.buyPrice;
+      usedByStockInId.set(active.id, (usedByStockInId.get(active.id) ?? 0) + so.quantity);
+    }
+  }
+};
 
 // === Normalisasi data lama -> struktur baru ===
 export type NormalizedDataset = {
@@ -111,6 +151,7 @@ export function normalizeImportData(raw: unknown): NormalizedDataset | null {
         buyPrice: num(r.buyPrice ?? r.buy_price) || undefined,
         // Kolom baru di skema baru: referensi Barang Masuk (disinkronkan di bawah).
         stockInId: str(r.stockInId ?? r.stock_in_id ?? r.barang_masuk_id ?? "") || undefined,
+        stockOutGroupId: str(r.stockOutGroupId ?? r.stock_out_group_id ?? "") || undefined,
         saleType: (r.saleType ?? r.sale_type ?? "eceran") === "grosir" ? "grosir" : "eceran",
         paymentMethod: (r.paymentMethod ?? r.payment_method ?? "cash") === "transfer"
           ? "transfer"
@@ -127,24 +168,7 @@ export function normalizeImportData(raw: unknown): NormalizedDataset | null {
   // Backup lama belum punya `stockInId`, jadi tautkan ke stok aktif.
   // Untuk data baru, pertahankan pilihan sumber stok yang sudah tersimpan.
   if (stockIn.length > 0) {
-    const stockInById = new Map(stockIn.map((si) => [si.id, si]));
-    for (const so of stockOut) {
-      const linked = so.stockInId ? stockInById.get(so.stockInId) : undefined;
-      if (linked) {
-        so.itemName = linked.itemName;
-        if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = linked.buyPrice;
-        continue;
-      }
-
-      if (!so.stockInId) {
-        const active = resolveActiveStockIn(stockIn, so.date);
-        if (active) {
-          so.stockInId = active.id;
-          so.itemName = active.itemName;
-          if (so.buyPrice == null || so.buyPrice <= 0) so.buyPrice = active.buyPrice;
-        }
-      }
-    }
+    assignMissingStockOutLinks(stockIn, stockOut);
   }
 
   // --- Sales (Rekap Penjualan lama) ---

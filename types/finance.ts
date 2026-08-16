@@ -85,6 +85,7 @@ export type StockOutRecord = {
   price: number;
   buyPrice?: number; // snapshot harga beli pada tanggal transaksi (Price History)
   stockInId?: string; // referensi dinamis ke Barang Masuk (stock_in) yang aktif pada tanggal transaksi
+  stockOutGroupId?: string; // mengikat pecahan FIFO dari satu input penjualan
   saleType?: "eceran" | "grosir";
   paymentMethod?: "cash" | "transfer" | "hutang";
   weighings?: WeighingEntry[];

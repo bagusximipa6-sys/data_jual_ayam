@@ -39,23 +39,37 @@ export const resolveStockBatches = (
     .sort((a, b) => a.id.localeCompare(b.id));
 
   const totalOutByStockInId = new Map<string, number>();
-  const legacyOutByItemName = new Map<string, number>();
+  const legacyOut = allStockOut
+    .filter((so) => !ignoredIds.has(so.id) && so.date === onDate && !so.stockInId)
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   for (const so of allStockOut) {
     if (ignoredIds.has(so.id) || so.date !== onDate) continue;
 
     if (so.stockInId) {
       totalOutByStockInId.set(so.stockInId, (totalOutByStockInId.get(so.stockInId) ?? 0) + so.quantity);
-    } else {
-      const key = so.itemName.toLowerCase();
-      legacyOutByItemName.set(key, (legacyOutByItemName.get(key) ?? 0) + so.quantity);
+    }
+  }
+
+  for (const so of legacyOut) {
+    let qtyLeft = so.quantity;
+    const sameItemBatches = batches.filter((batch) => batch.itemName.toLowerCase() === so.itemName.toLowerCase());
+    const targetBatches = sameItemBatches.length > 0 ? sameItemBatches : batches;
+
+    for (const batch of targetBatches) {
+      if (qtyLeft <= 0) break;
+      const used = totalOutByStockInId.get(batch.id) ?? 0;
+      const remaining = Math.max(0, batch.quantity - used);
+      if (remaining <= 0) continue;
+
+      const qtyFromBatch = Math.min(qtyLeft, remaining);
+      totalOutByStockInId.set(batch.id, used + qtyFromBatch);
+      qtyLeft -= qtyFromBatch;
     }
   }
 
   return batches.map((record) => {
-    const linkedOut = totalOutByStockInId.get(record.id) ?? 0;
-    const legacyOut = legacyOutByItemName.get(record.itemName.toLowerCase()) ?? 0;
-    const totalOut = linkedOut + legacyOut;
+    const totalOut = totalOutByStockInId.get(record.id) ?? 0;
     return {
       record,
       totalOut,

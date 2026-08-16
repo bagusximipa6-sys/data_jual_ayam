@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { db } from "@vercel/postgres";
+import { db, type VercelPoolClient } from "@vercel/postgres";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/migrate -> jalankan sql/schema.sql terhadap database
 export async function POST(request: NextRequest) {
-  let client: { release: () => void } | null = null;
+  let client: VercelPoolClient | null = null;
   try {
     // Ambil schema dari body (opsional) atau baca dari file
     let schema: string;
@@ -36,10 +36,9 @@ export async function POST(request: NextRequest) {
       .filter((s) => s.length > 0);
 
     client = await db.connect();
-    const c = client as unknown as { query: (text: string) => Promise<unknown> };
 
     for (const stmt of statements) {
-      await c.query(stmt);
+      await client.sql`${stmt}`;
     }
 
     return NextResponse.json({ ok: true, executed: statements.length });

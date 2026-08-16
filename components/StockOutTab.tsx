@@ -42,6 +42,7 @@ interface StockOutTabProps {
 
 let stockOutIdCounter = Date.now();
 const nextId = () => `SO-${++stockOutIdCounter}`;
+const nextGroupId = () => `SOG-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export function StockOutTab({
   stockOut,
@@ -174,12 +175,15 @@ const handleSubmit = (e: React.FormEvent) => {
     const quantity = weighingsTotal;
     if (!bakulName || quantity <= 0 || autoPrice <= 0) return;
 
+    const groupId = nextGroupId();
+
     const buildStockOutRecord = (
       batch: { record: StockInRecord; remaining: number },
       batchQuantity: number,
       isFirstSplit: boolean
     ): StockOutRecord => ({
       id: nextId(),
+      stockOutGroupId: groupId,
       date: form.date,
       bakulName,
       itemName: batch.record.itemName,

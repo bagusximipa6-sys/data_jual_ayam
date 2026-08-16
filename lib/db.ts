@@ -32,14 +32,24 @@ export type AppDataSet = {
 const num = (v: unknown): number =>
   typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) || 0 : 0;
 
-// === Pastikan kolom baru ada (idempotent) ===
+// === Pastikan kolom yang dipakai aplikasi ada (idempotent) ===
 // Dipanggil sebelum load/save agar aplikasi tetap online walau DB produksi
-// (Vercel) belum dimigrasi. Kolom baru `stock_in_id` ditambahkan jika belum ada.
-export async function ensureStockInIdColumn(): Promise<void> {
+// (Vercel) belum dimigrasi atau dibuat dari skema lama.
+export async function ensureDatabaseSchema(): Promise<void> {
   try {
+    await db.sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0`;
+    await db.sql`ALTER TABLE bakul_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC NOT NULL DEFAULT 0`;
+    await db.sql`ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS bird_count NUMERIC`;
+    await db.sql`ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0`;
     await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_in_id TEXT DEFAULT ''`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_out_group_id TEXT DEFAULT ''`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS sale_type TEXT DEFAULT 'eceran'`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash'`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC`;
+    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb`;
   } catch {
-    // Abaikan bila gagal (mis. sudah ada / tidak punya izin) — query utama
+    // Abaikan bila gagal (mis. tidak punya izin) — query utama
     // akan tetap mencoba dan fallback di bawah.
   }
 }
@@ -65,6 +75,7 @@ type StockOutRow = {
   price: number;
   buyPrice: number;
   stockInId: string | null;
+  stockOutGroupId: string | null;
   saleType: string;
   paymentMethod: string;
   birdCount: number | null;
@@ -106,14 +117,14 @@ type MetaRow = { opsCategories: string[] };
 // === Load seluruh data dari DB ===
 export async function loadAllData(): Promise<AppDataSet> {
   // Pastikan kolom baru ada sebelum query (agar tetap online walau belum migrasi).
-  await ensureStockInIdColumn();
+  await ensureDatabaseSchema();
 
 const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR, priceHistoryR] =
     await Promise.all([
-      db.sql`SELECT id, name, sell_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
-      db.sql`SELECT id, name, address AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`,
+      db.sql`SELECT id, name, buy_price AS "buyPrice" FROM items ORDER BY created_at ASC`, // Tetap benar
+      db.sql`SELECT id, name, sell_price AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`, // Tetap benar
       db.sql`SELECT id, date, item_name AS "itemName", quantity, buy_price AS "buyPrice", bird_count AS "birdCount", weighings FROM stock_in ORDER BY created_at ASC`,
-db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, buy_price AS "buyPrice", stock_in_id AS "stockInId", sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC`,
+      db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, buy_price AS "buyPrice", stock_in_id AS "stockInId", stock_out_group_id AS "stockOutGroupId", sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC`,
       db.sql`SELECT date, modal_qty AS "modalQty", modal_total AS "modalTotal", sale_qty AS "saleQty", sale_total AS "saleTotal", shrink, target, gross_profit AS "grossProfit", difference, operational, net_profit AS "netProfit", note FROM sales ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, name, bill, paid, balance, note FROM bakul_records ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, description, amount, note FROM ops_records ORDER BY position ASC, created_at ASC`,
@@ -153,6 +164,7 @@ const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).
 price: num(r.price),
     buyPrice: num(r.buyPrice),
     stockInId: r.stockInId != null && r.stockInId !== "" ? r.stockInId : undefined,
+    stockOutGroupId: r.stockOutGroupId != null && r.stockOutGroupId !== "" ? r.stockOutGroupId : undefined,
     saleType: (r.saleType === "grosir" ? "grosir" : "eceran") as "eceran" | "grosir",
     paymentMethod: (r.paymentMethod === "transfer"
       ? "transfer"
@@ -222,7 +234,7 @@ const penyusutan: PenyusutanRecord[] = (penyusutanR.rows as unknown as Penyusuta
 // === Simpan seluruh data (transaksi atomik) ===
 export async function saveAllData(data: AppDataSet): Promise<void> {
   // Pastikan kolom baru ada sebelum INSERT (agar save tidak gagal di DB lama).
-  await ensureStockInIdColumn();
+  await ensureDatabaseSchema();
 
 const {
     sales,
@@ -253,13 +265,13 @@ const client = await db.connect();
     // Items
     for (const item of items) {
       await client.sql`
-        INSERT INTO items (id, name, sell_price) VALUES (${item.id}, ${item.name}, ${item.buyPrice})
+        INSERT INTO items (id, name, buy_price) VALUES (${item.id}, ${item.name}, ${item.buyPrice})
       `;
     }
     // Bakul masters
     for (const m of bakulMasters) {
       await client.sql`
-        INSERT INTO bakul_masters (id, name, address) VALUES (${m.id}, ${m.name}, ${String(m.sellPrice ?? 0)})
+        INSERT INTO bakul_masters (id, name, sell_price) VALUES (${m.id}, ${m.name}, ${m.sellPrice ?? 0})
       `;
     }
 // Stock in
@@ -272,8 +284,8 @@ const client = await db.connect();
 // Stock out
     for (const r of stockOut) {
 await client.sql`
-        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, stock_in_id, sale_type, payment_method, bird_count, weighings)
-        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.stockInId ?? ""}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
+        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, stock_in_id, stock_out_group_id, sale_type, payment_method, bird_count, weighings)
+        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.stockInId ?? ""}, ${r.stockOutGroupId ?? ""}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
     }
     // Price history
