@@ -283,7 +283,7 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
 
       if (hasAnyServerData(serverData)) {
         // Server has data, this is the source of truth.
-handleImportData({
+        applyDatasetToState({
           sales: serverData.sales ?? [],
           bakulRecords: serverData.bakulRecords ?? [],
           ops: serverData.ops ?? [],
