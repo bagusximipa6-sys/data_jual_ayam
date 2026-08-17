@@ -47,12 +47,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { userId, sessionClaims } = await auth();
-    // Hanya admin yang boleh menyimpan data.
-   // Menggunakan type assertion untuk CustomPublicMetadata yang didefinisikan secara global.
-    const publicMetadata = sessionClaims?.publicMetadata as CustomPublicMetadata | undefined;
-    if (publicMetadata?.role !== "admin") {      
-      return NextResponse.json({ ok: false, error: "Akses ditolak. Hanya admin yang dapat menyimpan data." }, { status: 403 });
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "Tidak terautentikasi." }, { status: 401 });
     }
+
+    // User login boleh menyimpan data harian. Restore/import penuh tetap khusus admin.
+    // Menggunakan type assertion untuk CustomPublicMetadata yang didefinisikan secara global.
+    const publicMetadata = sessionClaims?.publicMetadata as CustomPublicMetadata | undefined;
 
     const body = (await request.json()) as Partial<AppDataSet> & { force?: boolean };
     if (!body || typeof body !== "object") {
@@ -62,6 +63,9 @@ export async function POST(request: NextRequest) {
     // `force` = Restore/Import penuh (oleh admin). Saat true, guard Penguncian
     // Harian dilewati agar data tanggal lampau dari backup dapat ditulis.
     const force = body.force === true;
+    if (force && publicMetadata?.role !== "admin") {
+      return NextResponse.json({ ok: false, error: "Akses ditolak. Restore data hanya untuk admin." }, { status: 403 });
+    }
 
     const data: AppDataSet = {
       sales: body.sales ?? [],

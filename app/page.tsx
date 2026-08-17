@@ -265,6 +265,11 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
   useEffect(() => {
     if (!isClient) return;
 
+    if (!user) {
+      setSyncStatus("offline");
+      return;
+    }
+
     const initializeData = async () => {
       setSyncStatus("loading");
       const serverData = await fetchAllFromServer();
@@ -312,12 +317,12 @@ setSyncStatus("saving");
     };
 
     initializeData();
-  }, [isClient, handleImportData]);
+  }, [isClient, handleImportData, user]);
 
   // This effect handles pushing data to the server whenever it changes.
   useEffect(() => {
     // Don't save during initial load or if offline.
-    if (syncStatus === "loading" || syncStatus === "offline" || !isClient) {
+    if (syncStatus === "loading" || syncStatus === "offline" || !isClient || !user) {
       return;
     }
 
