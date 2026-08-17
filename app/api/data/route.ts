@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Akses ditolak. Restore data hanya untuk admin." }, { status: 403 });
     }
 
-    const data: AppDataSet = {
+    let data: AppDataSet = {
       sales: body.sales ?? [],
       bakulRecords: body.bakulRecords ?? [],
       ops: body.ops ?? [],
@@ -85,52 +85,34 @@ export async function POST(request: NextRequest) {
     // yang diubah/dihapus/ditambah, tolak permintaan. (Dilewatkan saat `force`.)
     if (!force) {
       const current = await loadAllData();
+      const keepUnlockedOnly = <T extends { date: string }>(records: T[]) =>
+        records.filter((record) => !isLockedDate(record.date));
 
-      // Helper: normalisasi array record ber-tanggal untuk dibandingkan.
-      const sign = (arr: Array<Record<string, unknown>>) => arr.map((r) => JSON.stringify(r)).sort().join("|");
-
-      // 1) Stock In: pastikan record tanggal lampau tidak berubah.
-      const currentPastStockIn = current.stockIn.filter((r) => isLockedDate(r.date));
-      const incomingPastStockIn = data.stockIn.filter((r) => isLockedDate(r.date));
-      if (sign(incomingPastStockIn as unknown as Array<Record<string, unknown>>) !== sign(currentPastStockIn as unknown as Array<Record<string, unknown>>)) {
-        return NextResponse.json(
-          { ok: false, error: "Ditolak: data Barang Masuk pada tanggal lampau terkunci. Hanya tanggal hari ini yang dapat diedit." },
-          { status: 403 }
-        );
-      }
-
-      // 2) Stock Out: pastikan record tanggal lampau tidak berubah.
-      const currentPastStockOut = current.stockOut.filter((r) => isLockedDate(r.date));
-      const incomingPastStockOut = data.stockOut.filter((r) => isLockedDate(r.date));
-      if (sign(incomingPastStockOut as unknown as Array<Record<string, unknown>>) !== sign(currentPastStockOut as unknown as Array<Record<string, unknown>>)) {
-        return NextResponse.json(
-          { ok: false, error: "Ditolak: data Barang Keluar pada tanggal lampau terkunci. Hanya tanggal hari ini yang dapat diedit." },
-          { status: 403 }
-        );
-      }
-
-      // 3) Operasional: pastikan record tanggal lampau tidak berubah.
-      const currentPastOps = current.ops.filter((r) => isLockedDate(r.date));
-      const incomingPastOps = data.ops.filter((r) => isLockedDate(r.date));
-      if (sign(incomingPastOps as unknown as Array<Record<string, unknown>>) !== sign(currentPastOps as unknown as Array<Record<string, unknown>>)) {
-        return NextResponse.json(
-          { ok: false, error: "Ditolak: data Operasional pada tanggal lampau terkunci. Hanya tanggal hari ini yang dapat diedit." },
-          { status: 403 }
-        );
-      }
+      // Karena endpoint ini memakai model full-replace, payload normal selalu
+      // membawa snapshot lengkap. Untuk daily lock, pertahankan record lampau
+      // dari DB dan hanya terima perubahan pada tanggal hari ini/masa depan.
+      data = {
+        ...data,
+        stockIn: [
+          ...current.stockIn.filter((record) => isLockedDate(record.date)),
+          ...keepUnlockedOnly(data.stockIn),
+        ],
+        stockOut: [
+          ...current.stockOut.filter((record) => isLockedDate(record.date)),
+          ...keepUnlockedOnly(data.stockOut),
+        ],
+        ops: [
+          ...current.ops.filter((record) => isLockedDate(record.date)),
+          ...keepUnlockedOnly(data.ops),
+        ],
+        penyusutan: [
+          ...current.penyusutan.filter((record) => isLockedDate(record.date)),
+          ...keepUnlockedOnly(data.penyusutan),
+        ],
+      };
 
       // 4) Piutang Bakul: sengaja TIDAK dikunci (daily lock dimatikan)
       //    agar pengguna dapat menambah/mengubah/menghapus piutang pada tanggal hari sebelumnya.
-
-      // 5) Penyusutan: pastikan record tanggal lampau tidak berubah.
-      const currentPastPenyusutan = current.penyusutan.filter((r) => isLockedDate(r.date));
-      const incomingPastPenyusutan = data.penyusutan.filter((r) => isLockedDate(r.date));
-      if (sign(incomingPastPenyusutan as unknown as Array<Record<string, unknown>>) !== sign(currentPastPenyusutan as unknown as Array<Record<string, unknown>>)) {
-        return NextResponse.json(
-          { ok: false, error: "Ditolak: data Penyusutan pada tanggal lampau terkunci. Hanya tanggal hari ini yang dapat diedit." },
-          { status: 403 }
-        );
-      }
     }
 
     // === Simpan seluruh data dalam satu transaksi (rollback jika gagal) ===
