@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
     const userName = (serverName || body.userName || email || "Staf").trim().slice(0, 200);
 
     const id = `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const createdAt = new Date().toISOString();
     await logActivity({
       id,
       action,
@@ -88,7 +89,20 @@ export async function POST(request: NextRequest) {
       userName,
     });
 
-    return NextResponse.json({ ok: true, id });
+    return NextResponse.json({
+      ok: true,
+      id,
+      log: {
+        id,
+        action,
+        entity,
+        entityId,
+        summary,
+        userEmail: email,
+        userName,
+        createdAt,
+      },
+    });
   } catch (err) {
     console.error("POST /api/activity error:", err);
     return NextResponse.json({ ok: false, error: "Gagal mencatat aktivitas." }, { status: 500 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Input } from "@heroui/react";
+import { Input } from "@heroui/react";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import {
@@ -229,16 +229,22 @@ const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategorie
         const fullName = [user?.firstName ?? "", user?.lastName ?? ""].filter(Boolean).join(" ").trim();
         const userName = fullName || user?.username || userEmail || "";
 
-        await fetch("/api/activity", {
+        const res = await fetch("/api/activity", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, entity, entityId, summary, userEmail, userName }),
         });
+        if (isAdmin && res.ok) {
+          const json = (await res.json()) as { ok?: boolean; log?: ActivityLog };
+          if (json.ok && json.log) {
+            setActivityLogs((prev) => [json.log as ActivityLog, ...prev.filter((log) => log.id !== json.log?.id)]);
+          }
+        }
       } catch {
         // Gagal mencatat aktivitas tidak boleh menghentikan aksi utama.
       }
     },
-    [user]
+    [isAdmin, user]
   );
 
   const refreshActivityLogs = useCallback(async () => {
@@ -317,7 +323,7 @@ setSyncStatus("saving");
     };
 
     initializeData();
-  }, [isClient, handleImportData, user]);
+  }, [isClient, handleImportData, user, applyDatasetToState]);
 
   // This effect handles pushing data to the server whenever it changes.
   useEffect(() => {
@@ -700,9 +706,15 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     const piutangToAdd = recordsToAdd.map(stockOutToBakulRecord);
     setBakulRecords((prev) => [...prev.filter((br) => !notesToDelete.has(br.note)), ...piutangToAdd]);
 
-    for (const r of recordsToAdd) {
-      recordActivity("add", "Barang Keluar (dari Edit)", r.id, `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`);
-    }
+    const editedSummary = recordsToAdd
+      .map((r) => `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`)
+      .join(", ");
+    recordActivity(
+      "update",
+      "Barang Keluar",
+      deletedRecord.id,
+      `Edit split ${recordsToDelete.length} data menjadi ${recordsToAdd.length} data: ${editedSummary}`
+    );
   };
 
   // CRUD Biaya Operasional
@@ -821,7 +833,7 @@ const handleResetData = async () => {
       {/* Main Container */}
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
 {/* Navigation Tabs */}
-        <div className="rounded-2xl bg-white/70 p-2 shadow-sm backdrop-blur-sm border border-[#191712]/5">
+        <div className="rounded-xl bg-white/70 p-2 shadow-sm backdrop-blur-sm border border-[#191712]/5">
 <nav className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:gap-2">
             {visibleMenus.map(({ key, label, icon: Icon }) => {
               const active = menu === key;
@@ -830,7 +842,7 @@ const handleResetData = async () => {
                   key={key}
                   type="button"
                   onClick={() => setMenu(key)}
-                  className={`group flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-center transition-all sm:flex-row sm:px-3 sm:py-2 ${
+                  className={`group flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all sm:flex-row sm:px-3 sm:py-2 ${
                     active
                       ? "bg-[#191712] text-white shadow-md"
                       : "bg-[#f7f5ef] text-[#706858] hover:bg-[#f0eadb] hover:text-[#191712]"
@@ -854,7 +866,7 @@ const handleResetData = async () => {
           {menu === "dashboard" && (
             <div className="space-y-6">
               {/* Laporan Harian Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#191712]/10 bg-white p-4 sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#191712]/10 bg-white p-4 sm:px-6">
                 <div>
                   <h2 className="text-xl font-black text-[#191712]">Laporan Harian</h2>
                   <p className="text-xs text-[#706858]">
@@ -876,7 +888,7 @@ const handleResetData = async () => {
 
               {/* Pengingat login: user harus masuk untuk bisa input barang */}
               {!user && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50 p-4 shadow-sm">
                   <div className="flex items-center gap-3">
                     <ShieldCheck size={22} className="shrink-0 text-amber-600" />
                     <div>
@@ -900,13 +912,13 @@ const handleResetData = async () => {
                 {isAdmin && (
                   <>
                     <MetricCard
-                      label={`Total Barang Keluar • ${reportDate}`}
+                      label="Total Barang Keluar"
                       value={`${shortNumber(dailyQty)} kg`}
                       tone="blue"
                       icon={Package}
                     />
                     <MetricCard
-                      label={`Total Omzet / Penjualan`}
+                      label="Total Omzet / Penjualan"
                       value={rupiah(dailyOmzet)}
                       tone="green"
                       icon={CircleDollarSign}
@@ -914,7 +926,7 @@ const handleResetData = async () => {
                   </>
                 )}
                 <MetricCard
-                  label={`Sisa Stok • ${reportDate}`}
+                  label="Sisa Stok"
                   value={`${shortNumber(dailyStockRemaining)} kg`}
                   tone="yellow"
                   icon={Boxes}
@@ -937,8 +949,8 @@ const handleResetData = async () => {
 
 {/* Harga Ayam Hari Ini (khusus Admin) */}
               {isAdmin && (
-                <div className="overflow-hidden rounded-2xl border border-[#191712]/10 bg-white shadow-sm">
-                  <div className="flex items-center justify-between gap-2 border-b border-[#191712]/10 bg-gradient-to-r from-[#d9ff67] to-[#b3e619] px-5 py-3">
+                <div className="overflow-hidden rounded-xl border border-zinc-200/80 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-2 border-b border-zinc-200/80 px-5 py-3">
                     <div className="flex items-center gap-2">
                       <Tag size={18} className="text-[#191712]" />
                       <h3 className="text-base font-black text-[#191712]">Harga Ayam Hari Ini</h3>
@@ -963,7 +975,7 @@ const handleResetData = async () => {
                           return (
                             <div
                               key={item.name}
-                              className="relative overflow-hidden rounded-xl border border-[#191712]/10 bg-gradient-to-br from-[#f7f5ef] to-white p-4"
+                              className="relative overflow-hidden rounded-lg border border-zinc-200/80 bg-white p-4"
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div>
@@ -972,7 +984,7 @@ const handleResetData = async () => {
                                     {item.buyPrice != null ? "Harga beli master" : "Harga transaksi"}
                                   </p>
                                 </div>
-                                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#191712]/5 text-[#191712]">
+                                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#191712]/5 text-[#191712]">
                                   <TrendingUp size={16} />
                                 </span>
                               </div>

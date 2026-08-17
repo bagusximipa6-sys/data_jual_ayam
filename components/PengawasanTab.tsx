@@ -1,7 +1,7 @@
 "use client";
 
 import { Chip, Input } from "@heroui/react";
-import { Activity, Eye, PencilRuler, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from "lucide-react";
+import { Activity, Eye, Mail, PencilRuler, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActivityAction, ActivityLog } from "@/types/finance";
 
@@ -150,7 +150,7 @@ if (name) {
           <div className="w-full sm:w-64">
             <Input
               size="sm"
-              placeholder="Cari aksi/entitas/staf/email..."
+              placeholder="Cari aksi/entitas/nama/email..."
               value={search}
               onValueChange={setSearch}
               startContent={<Search size={14} className="text-[#706858]" />}
@@ -171,14 +171,15 @@ if (name) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-[#191712]/10 text-[11px] uppercase tracking-wide text-[#706858]">
                   <th className="py-3 pr-4 font-bold">Waktu</th>
                   <th className="py-3 pr-4 font-bold">Aksi</th>
                   <th className="py-3 pr-4 font-bold">Entitas</th>
-<th className="py-3 pr-4 font-bold">Ringkasan</th>
-                  <th className="py-3 pr-4 font-bold">Staf / Pengguna</th>
+                  <th className="py-3 pr-4 font-bold">Ringkasan</th>
+                  <th className="py-3 pr-4 font-bold">Nama Pelaku</th>
+                  <th className="py-3 pr-4 font-bold">Email</th>
                 </tr>
               </thead>
               <tbody>
@@ -200,7 +201,7 @@ if (name) {
                       </td>
                       <td className="py-3 pr-4 font-bold text-[#191712] whitespace-nowrap">{log.entity}</td>
                       <td className="py-3 pr-4 text-xs text-[#706858]">{log.summary || "—"}</td>
-<td className="py-3 pr-4">
+                      <td className="py-3 pr-4">
                         <div className="flex items-center gap-2.5">
                           <span
                             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${avatarTone(log)}`}
@@ -210,11 +211,23 @@ if (name) {
                           </span>
                           <div className="min-w-0 text-xs">
                             <p className="truncate font-bold text-[#191712]">{displayName(log)}</p>
-                            {log.userEmail && (
-                              <p className="truncate text-[10px] text-[#706858]">{log.userEmail}</p>
-                            )}
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#706858]">
+                              {log.action === "update" ? "Diedit oleh" : "Dicatat oleh"}
+                            </p>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-3 pr-4 text-xs text-[#706858]">
+                        {log.userEmail ? (
+                          <span className="inline-flex max-w-[220px] items-center gap-1.5">
+                            <Mail size={12} className="shrink-0" />
+                            <span className="truncate" title={log.userEmail}>
+                              {log.userEmail}
+                            </span>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   );

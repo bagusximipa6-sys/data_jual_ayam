@@ -867,18 +867,18 @@ label: string;
   value: string;
   tone: "plain" | "blue" | "yellow" | "green" | "red" | "purple";
 }) {
-  const tones = {
-    plain: "bg-white border-zinc-200/80 text-[#191712]",
-    blue: "bg-gradient-to-br from-[#e0f2fe] to-[#bae6fd] border-sky-300 text-sky-950",
-    yellow: "bg-gradient-to-br from-[#fef9c3] to-[#fef08a] border-amber-300 text-amber-950",
-    green: "bg-gradient-to-br from-[#ecfccb] to-[#d9f99d] border-lime-300 text-lime-950",
-    red: "bg-gradient-to-br from-[#ffe4e6] to-[#fecdd3] border-rose-300 text-rose-950",
-    purple: "bg-gradient-to-br from-[#f3e8ff] to-[#e9d5ff] border-purple-300 text-purple-950",
+  const toneClasses = {
+    plain: "border-t-slate-300",
+    blue: "border-t-sky-500",
+    yellow: "border-t-amber-400",
+    green: "border-t-green-500",
+    red: "border-t-rose-500",
+    purple: "border-t-purple-500",
   };
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border p-4 shadow-sm ${tones[tone]}`}>
-      <p className="font-mono text-[10px] font-extrabold uppercase tracking-[0.16em] opacity-80">{label}</p>
+    <div className={`relative overflow-hidden rounded-lg border border-zinc-200/80 bg-white p-4 shadow-sm border-t-4 ${toneClasses[tone]}`}>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="mt-1 break-words text-xl font-black tracking-tight">{value}</p>
     </div>
   );
