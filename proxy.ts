@@ -1,6 +1,27 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 
-export default clerkMiddleware();
+const clerkProxyUrl = process.env.NEXT_PUBLIC_CLERK_PROXY_URL;
+
+function getProxyPath(proxyUrl: string) {
+  if (proxyUrl.startsWith("/")) return proxyUrl;
+
+  try {
+    return new URL(proxyUrl).pathname || "/__clerk";
+  } catch {
+    return "/__clerk";
+  }
+}
+
+export default clerkMiddleware(
+  clerkProxyUrl
+    ? {
+        frontendApiProxy: {
+          enabled: true,
+          path: getProxyPath(clerkProxyUrl),
+        },
+      }
+    : {}
+);
 
 export const config = {
   matcher: [

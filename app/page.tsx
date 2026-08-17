@@ -752,10 +752,16 @@ const handleResetData = async () => {
     let resetOk = false;
     try {
       const res = await fetch("/api/data", { method: "DELETE" });
-      const json = (await res.json()) as { ok?: boolean };
-      resetOk = json.ok === true;
+      resetOk = res.ok;
+      if (!resetOk) {
+        setSyncStatus("error");
+        console.error("Failed to reset data on server:", res.status, await res.text());
+        return; // Stop execution if reset fails
+      }
     } catch {
       resetOk = false;
+      setSyncStatus("error");
+      return;
     }
 
     setSales(initialSales as DailySale[]);
@@ -782,7 +788,7 @@ const handleResetData = async () => {
       penyusutan: initialPenyusutan as PenyusutanRecord[],
       priceHistory: initialPriceHistory as PriceHistory[],
     });
-setSyncStatus(result.ok ? "saved" : (resetOk ? "saved" : "error"));
+    setSyncStatus(result.ok ? "saved" : "error");
     recordActivity("reset", "Seluruh Data", "", "Reset data ke kondisi awal demo");
     refreshActivityLogs();
   };

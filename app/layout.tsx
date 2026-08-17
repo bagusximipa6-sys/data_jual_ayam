@@ -3,6 +3,8 @@ import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs';
 import { Providers } from "./providers";
 
+const clerkProxyUrl = process.env.NEXT_PUBLIC_CLERK_PROXY_URL;
+
 export const metadata: Metadata = {
   title: 'Rembo Broiler | Buku Keuangan Usaha',
   description: 'Buku Keuangan Usaha Rembo Broiler',
@@ -25,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider {...(clerkProxyUrl ? { proxyUrl: clerkProxyUrl } : {})}>
       <html lang="en" className="light" suppressHydrationWarning>
         <body
           className="min-h-screen text-foreground bg-background font-sans antialiased"

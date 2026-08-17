@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadAllData, resetAllData, saveAllData, type AppDataSet } from "@/lib/db";
+import { auth } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,14 @@ export async function GET() {
 // yang nilainya berubah dari kondisi DB saat ini (karena sistem full-replace).
 export async function POST(request: NextRequest) {
   try {
+    const { userId, sessionClaims } = await auth();
+    // Hanya admin yang boleh menyimpan data.
+   // Menggunakan type assertion untuk CustomPublicMetadata yang didefinisikan secara global.
+    const publicMetadata = sessionClaims?.publicMetadata as CustomPublicMetadata | undefined;
+    if (publicMetadata?.role !== "admin") {      
+      return NextResponse.json({ ok: false, error: "Akses ditolak. Hanya admin yang dapat menyimpan data." }, { status: 403 });
+    }
+
     const body = (await request.json()) as Partial<AppDataSet> & { force?: boolean };
     if (!body || typeof body !== "object") {
       return NextResponse.json({ ok: false, error: "Payload tidak valid." }, { status: 400 });
@@ -152,6 +161,13 @@ export async function POST(request: NextRequest) {
 // DELETE /api/data -> reset seluruh data
 export async function DELETE() {
   try {
+    const { userId, sessionClaims } = await auth();
+    // Hanya admin yang boleh mereset data. Menggunakan type assertion untuk CustomPublicMetadata.
+    const publicMetadata = sessionClaims?.publicMetadata as CustomPublicMetadata | undefined;
+    if (publicMetadata?.role !== "admin") {
+      return NextResponse.json({ ok: false, error: "Akses ditolak. Hanya admin yang dapat mereset data." }, { status: 403 });
+    }
+
     await resetAllData();
     return NextResponse.json({ ok: true });
   } catch (err) {
