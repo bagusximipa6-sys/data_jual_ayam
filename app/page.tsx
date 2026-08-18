@@ -527,7 +527,13 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
   };
   const handleDeleteBakulMaster = (index: number) => {
     const deleted = bakulMasters[index];
+    if (!deleted) return;
+
+    // Hapus juga StockOut dan BakulRecord yang terkait
     setBakulMasters((prev) => prev.filter((_, i) => i !== index));
+    setStockOut(prev => prev.filter(so => so.bakulName.toLowerCase() !== deleted.name.toLowerCase()));
+    setBakulRecords(prev => prev.filter(br => br.name.toLowerCase() !== deleted.name.toLowerCase()));
+
     if (deleted) recordActivity("delete", "Master Bakul", deleted.id, deleted.name);
   };
 
@@ -542,21 +548,22 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     setStockIn((prev) => [snapshot, ...prev]);
     recordActivity("add", "Barang Masuk", snapshot.id, `${snapshot.itemName} • ${snapshot.date} (+${snapshot.quantity} kg)`);
   };
-  const handleUpdateStockIn = (index: number, record: StockInRecord) => {
-    if (isRecordLocked(stockIn[index]?.date ?? record.date)) return;
+  const handleUpdateStockIn = (id: string, record: StockInRecord) => {
+    const existing = stockIn.find(s => s.id === id);
+    if (isRecordLocked(existing?.date ?? record.date)) return;
     // Snapshot ulang harga beli yang berlaku pada tanggal transaksi.
     const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
     const active = itemMaster
       ? resolveActivePrice(priceHistory, itemMaster.id, record.date)
       : null;
     const snapshot = { ...record, buyPrice: active ? active.buyPrice : (itemMaster?.buyPrice ?? record.buyPrice) };
-    setStockIn((prev) => prev.map((item, i) => (i === index ? snapshot : item)));
+    setStockIn((prev) => prev.map((item) => (item.id === id ? snapshot : item)));
     recordActivity("update", "Barang Masuk", snapshot.id, `${snapshot.itemName} • ${snapshot.date} (+${snapshot.quantity} kg)`);
   };
-  const handleDeleteStockIn = (index: number) => {
-    const deleted = stockIn[index];
+  const handleDeleteStockIn = (id: string) => {
+    const deleted = stockIn.find(s => s.id === id);
     if (!deleted || isRecordLocked(deleted.date)) return;
-    setStockIn((prev) => prev.filter((_, i) => i !== index));
+    setStockIn((prev) => prev.filter((item) => item.id !== id));
     if (deleted) recordActivity("delete", "Barang Masuk", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
 
@@ -634,9 +641,9 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
       recordActivity("add", "Barang Keluar", r.id, `${r.itemName} • ${r.bakulName} • ${r.date} (${r.quantity} kg)`);
     }
   };
-  const handleUpdateStockOut = (index: number, record: StockOutRecord) => {
-    if (isRecordLocked(stockOut[index]?.date ?? record.date)) return;
-    const previousRecord = stockOut[index];
+  const handleUpdateStockOut = (id: string, record: StockOutRecord) => {
+    const previousRecord = stockOut.find(s => s.id === id);
+    if (isRecordLocked(previousRecord?.date ?? record.date)) return;
     const previousNote = previousRecord ? stockOutPiutangNote(previousRecord.id) : stockOutPiutangNote(record.id);
     const cogs = resolveStockOutCogs(record);
     const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
@@ -651,7 +658,7 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
       price: activeSell && activeSell.sellPrice > 0 ? activeSell.sellPrice : record.price,
     };
     const nextPiutang = stockOutToBakulRecord(snapshot);
-    setStockOut((prev) => prev.map((item, i) => (i === index ? snapshot : item)));
+    setStockOut((prev) => prev.map((item) => (item.id === id ? snapshot : item)));
     setBakulRecords((prev) => {
       const linkedIndex = prev.findIndex((item) => item.note === previousNote);
       if (linkedIndex === -1) return [nextPiutang, ...prev];
@@ -659,8 +666,8 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     });
     recordActivity("update", "Barang Keluar", snapshot.id, `${snapshot.itemName} • ${snapshot.bakulName} • ${snapshot.date} (${snapshot.quantity} kg)`);
   };
-  const handleDeleteStockOut = (index: number) => {
-    const recordToDelete = stockOut[index]; // prettier-ignore
+  const handleDeleteStockOut = (id: string) => {
+    const recordToDelete = stockOut.find(s => s.id === id);
     if (!recordToDelete || isRecordLocked(recordToDelete.date)) return;
 
     const splitGroupId = recordToDelete.stockOutGroupId;
@@ -683,7 +690,7 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
     } else {
       // Ini adalah record tunggal (bukan bagian dari split). Hapus hanya record ini.
       const deletedNote = stockOutPiutangNote(recordToDelete.id);
-      setStockOut((prev) => prev.filter((_, i) => i !== index));
+      setStockOut((prev) => prev.filter((item) => item.id !== id));
       setBakulRecords((prev) => prev.filter((item) => item.note !== deletedNote));
       recordActivity("delete", "Barang Keluar", recordToDelete.id, `${recordToDelete.itemName} • ${recordToDelete.bakulName} • ${recordToDelete.date}`);
     }

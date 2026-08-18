@@ -15,7 +15,7 @@ import {
   Textarea,
 } from "@heroui/react";
 import { AlertCircle, Edit2, Plus, Printer, Scale, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { getTodayDate, resolveAvailableStockBatches, resolveStockBatches, rupiah, shortNumber, toNumber } from "@/lib/utils";
 import { BakulMaster, Role, StockInRecord, StockOutRecord } from "@/types/finance";
 import { WeighingKeypad } from "./WeighingKeypad";
@@ -35,9 +35,9 @@ interface StockOutTabProps {
   bakulMasters: BakulMaster[];
   role: Role;
   onAddStockOut: (record: StockOutRecord | StockOutRecord[]) => void;
-  onUpdateStockOut: (index: number, record: StockOutRecord) => void;
+  onUpdateStockOut: (id: string, record: StockOutRecord) => void;
   onUpdateAndResplitStockOut: (deleteIndex: number, recordsToAdd: StockOutRecord[]) => void;
-  onDeleteStockOut: (index: number) => void;
+  onDeleteStockOut: (id: string) => void;
 }
 
 let stockOutIdCounter = Date.now();
@@ -48,18 +48,16 @@ export function StockOutTab({
   stockOut,
   stockIn,
   allStockOut,
-  itemNames,
   bakulNames,
   bakulMasters,
   role,
   onAddStockOut,
-  onUpdateStockOut,
   onUpdateAndResplitStockOut,
   onDeleteStockOut,
 }: StockOutTabProps) {
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<StockOutRecord | null>(null);
   // Tanggal terpilih untuk melihat Riwayat Barang Keluar (seperti Laporan Harian).
   const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
   const isAdmin = role === "admin";
@@ -106,17 +104,20 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
       })),
     [stockBatches]
   );
-  const selectedStockOption = stockSourceOptions.find((option) => option.key === form.stockInId);
   const isAutoStockMode = form.stockMode === "auto";
 
-  useEffect(() => {
-    if (form.stockMode === "auto") return;
-    const selectedOption = stockSourceOptions.find((option) => option.key === form.stockInId);
+  // [PERBAIKAN] Pindahkan logika auto-select dari useEffect ke useMemo untuk menghindari render berulang.
+  // Jika mode manual dan stok yang dipilih habis, otomatis pindah ke stok berikutnya yang tersedia.
+  const correctedStockInId = useMemo(() => {
+    if (isAutoStockMode) return ""; // Kosongkan saat mode auto
+    const currentSelection = stockSourceOptions.find((option) => option.key === form.stockInId);
+    if (currentSelection && currentSelection.batch.remaining > 0) return form.stockInId; // Pilihan saat ini masih valid
     const nextAvailable = stockSourceOptions.find((option) => option.batch.remaining > 0);
-    if ((!selectedOption || selectedOption.batch.remaining <= 0) && nextAvailable) {
-      setForm((prev) => ({ ...prev, stockInId: nextAvailable.key }));
-    }
-  }, [form.stockInId, form.stockMode, stockSourceOptions]);
+    return nextAvailable?.key ?? form.stockInId; // Gunakan yang tersedia berikutnya, atau pertahankan jika tidak ada
+  }, [isAutoStockMode, form.stockInId, stockSourceOptions]);
+
+  const selectedStockOption = stockSourceOptions.find((option) => option.key === correctedStockInId);
+
 
   // Parse Data Timbangan expression into individual weights.
   // Supports "+", "-", space, newline, and parentheses: "(40)+(41)", "100-40-30".
@@ -147,7 +148,7 @@ const autoPrice = selectedBakulMaster?.sellPrice ?? 0;
       bakulName: item.bakulName,
       birdCount: item.birdCount != null ? String(item.birdCount) : "",
       stockMode: "manual",
-      stockInId: item.stockInId ?? "",
+      stockInId: item.stockInId ?? "", // Saat edit, gunakan ID yang tersimpan
     });
     setWeighingsInput(
       (item.weighings ?? [])
@@ -214,15 +215,14 @@ const handleSubmit = (e: React.FormEvent) => {
     };
 
     const buildManualRecord = (): StockOutRecord[] | null => {
-      const source = stockBatches.find((batch) => batch.record.id === form.stockInId);
-      const sourceLabel =
-        stockSourceOptions.find((option) => option.key === form.stockInId)?.label ?? "Sumber stok";
+      const source = stockBatches.find((batch) => batch.record.id === correctedStockInId);
       if (!source) {
         alert("Stok sumber tidak ditemukan. Silakan pilih sumber stok lain.");
         return null;
       }
       if (quantity > source.remaining) {
-        alert(`Stok ${sourceLabel} tidak mencukupi/sudah habis. Silakan pilih sumber stok lain.`);
+        const sourceLabel = stockSourceOptions.find((option) => option.key === correctedStockInId)?.label ?? "Sumber stok";
+        alert(`Stok ${sourceLabel} tidak mencukupi atau sudah habis. Silakan pilih sumber stok lain.`);
         return null;
       }
       return [buildStockOutRecord(source, quantity, true)];
@@ -383,10 +383,10 @@ const handleSubmit = (e: React.FormEvent) => {
                 <Select
                   aria-label="Pilih Asal Stok"
                   placeholder={isAutoStockMode ? "Auto-switch FIFO aktif" : "Pilih sumber stok"}
-                  selectedKeys={!isAutoStockMode && form.stockInId ? [form.stockInId] : []}
+                  selectedKeys={!isAutoStockMode && correctedStockInId ? [correctedStockInId] : []}
                   onSelectionChange={(keys) => {
                     const selected = String(Array.from(keys)[0] ?? "");
-                    setForm((prev) => ({ ...prev, stockInId: selected }));
+                    setForm((prev) => ({ ...prev, stockInId: selected, stockMode: "manual" }));
                   }}
                   radius="sm"
                   isDisabled={isAutoStockMode || stockSourceOptions.length === 0}
@@ -650,7 +650,7 @@ const handleSubmit = (e: React.FormEvent) => {
                         variant="flat"
                         className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
                         isDisabled={isRecordLocked(item.date)}
-                        onPress={() => setDeleteConfirmIndex(originalIndex)}
+                        onPress={() => setItemToDelete(item)}
                         radius="sm"
                       >
                         Hapus
@@ -664,7 +664,7 @@ const handleSubmit = (e: React.FormEvent) => {
         </div>
       </div>
 
-      <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">
+      <Modal isOpen={itemToDelete !== null} onClose={() => setItemToDelete(null)} size="sm">
         <ModalContent>
           <ModalHeader className="flex items-center gap-2 text-rose-700">
             <AlertCircle size={20} />
@@ -673,20 +673,20 @@ const handleSubmit = (e: React.FormEvent) => {
           <ModalBody className="pb-6">
             <p className="text-sm text-slate-700">
               Apakah Anda yakin ingin menghapus data penjualan untuk{" "}
-              <strong>{deleteConfirmIndex !== null ? stockOut[deleteConfirmIndex]?.itemName : ""}</strong>?
+              <strong>{itemToDelete?.itemName}</strong>?
             </p>
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="flat" radius="sm" onPress={() => setDeleteConfirmIndex(null)}>
+              <Button variant="flat" radius="sm" onPress={() => setItemToDelete(null)}>
                 Batal
               </Button>
               <Button
                 className="bg-rose-600 font-bold text-white"
                 radius="sm"
                 onPress={() => {
-                  if (deleteConfirmIndex !== null) {
-                    onDeleteStockOut(deleteConfirmIndex);
-                    setDeleteConfirmIndex(null);
+                  if (itemToDelete) {
+                    onDeleteStockOut(itemToDelete!.id);
                   }
+                  setItemToDelete(null);
                 }}
               >
                 Hapus Data

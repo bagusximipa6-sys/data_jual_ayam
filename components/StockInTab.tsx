@@ -31,8 +31,8 @@ interface StockInTabProps {
   items: ItemMaster[];
   role: Role;
   onAddStockIn: (record: StockInRecord) => void;
-  onUpdateStockIn: (index: number, record: StockInRecord) => void;
-  onDeleteStockIn: (index: number) => void;
+  onUpdateStockIn: (id: string, record: StockInRecord) => void;
+  onDeleteStockIn: (id: string) => void;
 }
 
 let stockInIdCounter = Date.now();
@@ -49,7 +49,7 @@ export function StockInTab({
 }: StockInTabProps) {
   const [search, setSearch] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<StockInRecord | null>(null);
   // Tanggal terpilih untuk melihat Riwayat Barang Masuk (seperti Laporan Harian).
   const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
 
@@ -146,7 +146,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
     };
 
     if (editingIndex !== null) {
-      onUpdateStockIn(editingIndex, record);
+      onUpdateStockIn(record.id, record);
     } else {
       onAddStockIn(record);
     }
@@ -431,7 +431,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
                         variant="flat"
                         className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
                         isDisabled={isRecordLocked(item.date)}
-                        onPress={() => setDeleteConfirmIndex(originalIndex)}
+                        onPress={() => setItemToDelete(item)}
                         radius="sm"
                       >
                         Hapus
@@ -446,7 +446,7 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
       </div>
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">
+      <Modal isOpen={itemToDelete !== null} onClose={() => setItemToDelete(null)} size="sm">
         <ModalContent>
           <ModalHeader className="flex items-center gap-2 text-rose-700">
             <AlertCircle size={20} />
@@ -455,20 +455,20 @@ const handleStartEdit = (item: StockInRecord, originalIndex: number) => {
           <ModalBody className="pb-6">
             <p className="text-sm text-slate-700">
               Apakah Anda yakin ingin menghapus data barang masuk untuk{" "}
-              <strong>{deleteConfirmIndex !== null ? stockIn[deleteConfirmIndex]?.itemName : ""}</strong>?
+              <strong>{itemToDelete?.itemName}</strong>?
             </p>
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="flat" radius="sm" onPress={() => setDeleteConfirmIndex(null)}>
+              <Button variant="flat" radius="sm" onPress={() => setItemToDelete(null)}>
                 Batal
               </Button>
               <Button
                 className="bg-rose-600 font-bold text-white"
                 radius="sm"
                 onPress={() => {
-                  if (deleteConfirmIndex !== null) {
-                    onDeleteStockIn(deleteConfirmIndex);
-                    setDeleteConfirmIndex(null);
+                  if (itemToDelete) {
+                    onDeleteStockIn(itemToDelete!.id);
                   }
+                  setItemToDelete(null);
                 }}
               >
                 Hapus Data
