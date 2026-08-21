@@ -603,66 +603,90 @@ const handleSubmit = (e: React.FormEvent) => {
                 radius="sm"
                 className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
               >
-                <CardBody className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="font-black text-[#191712]">{item.itemName}</h3>
-<p className="text-xs text-[#706858] font-medium">
-                      {item.date} - {item.bakulName}
-                      {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
-                      {!isRecordLocked(item.date) && item.birdCount != null && item.birdCount > 0 && `• ${item.birdCount} ekor`}
-                    </p>
-                    {isAdmin && (
-                      <p className="mt-1 text-[10px] text-[#706858] font-medium">
-                        Harga jual: {rupiah(item.price)} / kg
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 justify-between sm:justify-end">
-                    <div className="text-right">
-                      <span className="font-mono font-black text-[#e05234]">-{shortNumber(item.quantity)} kg</span>
-                      <p className="text-[10px] text-[#706858] font-mono font-bold">
-                        {rupiah(item.price * item.quantity)}
-                      </p>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        className="bg-[#e6f1ff] font-bold text-[#173a61] min-w-unit-12"
-                        startContent={<Printer size={14} />}
-                        onPress={() => handlePrintReceipt(item)}
-                        radius="sm"
-                      >
-                        Struk
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        className="font-bold min-w-unit-12"
-                        isDisabled={isRecordLocked(item.date)}
-                        onPress={() => handleStartEdit(item, originalIndex)}
-                        radius="sm"
-                      >
-                        {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="flat"
-                        className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
-                        isDisabled={isRecordLocked(item.date)}
-                        onPress={() => setItemToDelete(item)}
-                        radius="sm"
-                      >
-                        Hapus
-                      </Button>
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            ))
+      <CardBody className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <h3 className="font-black text-[#191712]">{item.itemName}</h3>
+          <p className="text-xs font-medium text-[#706858]">
+            {item.date} - {item.bakulName}
+            {isRecordLocked(item.date) ? " 🔒 Terkunci" : ""}{" "}
+            {!isRecordLocked(item.date) && item.birdCount != null && item.birdCount > 0 && `• ${item.birdCount} ekor`}
+          </p>
+          {isAdmin && (
+            <p className="mt-1 text-[10px] font-medium text-[#706858]">
+              Harga jual: {rupiah(item.price)} / kg
+            </p>
           )}
         </div>
+        <div className="flex items-center justify-between gap-4 sm:justify-end">
+          <div className="text-right">
+            <span className="font-mono font-black text-[#e05234]">-{shortNumber(item.quantity)} kg</span>
+            <p className="font-mono text-[10px] font-bold text-[#706858]">
+              {rupiah(item.price * item.quantity)}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="flat"
+              className="min-w-unit-12 bg-[#e6f1ff] font-bold text-[#173a61]"
+              startContent={<Printer size={14} />}
+              onPress={() => handlePrintReceipt(item)}
+              radius="sm"
+            >
+              Struk
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              className="min-w-unit-12 font-bold"
+              isDisabled={isRecordLocked(item.date)}
+              onPress={() => handleStartEdit(item, originalIndex)}
+              radius="sm"
+            >
+              {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              className="min-w-unit-12 bg-[#ffe2d8] font-bold text-[#8f321a]"
+              isDisabled={isRecordLocked(item.date)}
+              onPress={() => setItemToDelete(item)}
+              radius="sm"
+            >
+              Hapus
+            </Button>
+          </div>
+        </div>
       </div>
+
+      {/* === [TAMBAHAN] Rincian Data Timbangan === */}
+      {item.weighings && item.weighings.length > 0 && (
+        <div className="mt-1 rounded-lg border border-[#191712]/5 bg-[#f7f5ef] p-2.5">
+          <div className="mb-1.5 flex items-center gap-1">
+            <Scale size={12} className="text-[#706858]" />
+            <span className="text-[11px] font-bold text-[#706858]">
+              Detail Timbangan ({item.weighings.length}):
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {item.weighings.map((w, idx) => (
+              <span
+                key={w.id || idx}
+                className="inline-flex items-center rounded border border-[#191712]/10 bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-[#191712]"
+              >
+                {shortNumber(toNumber(w.weight))}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </CardBody>
+    </Card>
+    ))
+  )}
+  </div>
+</div>
 
       <Modal isOpen={itemToDelete !== null} onClose={() => setItemToDelete(null)} size="sm">
         <ModalContent>
