@@ -4,16 +4,17 @@ import { Input } from "@heroui/react";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   Boxes,
   CircleDollarSign,
   ClipboardList,
   Database,
   FileBarChart,
   HandCoins, // prettier-ignore
-Package,
+  Package,
   PackagePlus,
   ShieldCheck,
-ShoppingCart,
+  ShoppingCart,
   Tag,
   TrendingDown,
   TrendingUp,
@@ -22,6 +23,7 @@ ShoppingCart,
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { BakulTab } from "@/components/BakulTab";
+import { OverdueTab } from "@/components/OverdueTab";
 import { FinancialReportTab } from "@/components/FinancialReportTab";
 import { Header } from "@/components/Header";
 import { MasterTab } from "@/components/MasterTab";
@@ -74,6 +76,7 @@ const MENUS = [
   { key: "ops", label: "Operasional", icon: HandCoins, roles: ["staf", "admin"] },
   { key: "penyusutan", label: "Penyusutan", icon: TrendingDown, roles: ["admin"] },
   { key: "bakul", label: "Piutang Bakul", icon: Users, roles: ["user", "staf", "admin"] },
+  { key: "overdue", label: "Piutang Overdue", icon: AlertTriangle, roles: ["user", "staf", "admin"] },
   { key: "laporan", label: "Laba & Rugi", icon: FileBarChart, roles: ["admin"] },
   { key: "master", label: "Master & Cadangan", icon: Database, roles: ["user", "staf", "admin"] },
   { key: "pengawasan", label: "Alur Pengawasan", icon: ShieldCheck, roles: ["admin"] },
@@ -121,14 +124,14 @@ export default function Home() {
         : "user";
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
 
-const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
+  const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
   const [bakulRecords, setBakulRecords] = useState<BakulRecord[]>(initialBakulRecords as BakulRecord[]);
   const [ops, setOps] = useState<OperationalRecord[]>(initialOperationalRecords as OperationalRecord[]);
   const [items, setItems] = useState<ItemMaster[]>(initialItems as ItemMaster[]);
   const [bakulMasters, setBakulMasters] = useState<BakulMaster[]>(initialBakulMasters as BakulMaster[]);
   const [stockIn, setStockIn] = useState<StockInRecord[]>(initialStockIn as StockInRecord[]);
   const [stockOut, setStockOut] = useState<StockOutRecord[]>(initialStockOut as StockOutRecord[]);
-const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategories as string[]);
+  const [opsCategories, setOpsCategories] = useState<string[]>(initialOpsCategories as string[]);
   const [penyusutan, setPenyusutan] = useState<PenyusutanRecord[]>(initialPenyusutan as PenyusutanRecord[]);
   const [priceHistory, setPriceHistory] = useState<PriceHistory[]>(initialPriceHistory as PriceHistory[]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
@@ -1036,8 +1039,8 @@ const handleResetData = async () => {
             />
           )}
 
-{menu === "stockout" && (
-<StockOutTab
+          {menu === "stockout" && (
+            <StockOutTab
               stockOut={stockOut}
               stockIn={stockIn}
               allStockOut={stockOut}
@@ -1052,7 +1055,7 @@ const handleResetData = async () => {
             />
           )}
 
-{menu === "bakul" && (
+          {menu === "bakul" && (
             <BakulTab
               bakulRecords={filteredBakul}
               bakulNames={bakulNames}
@@ -1062,8 +1065,17 @@ const handleResetData = async () => {
               onDeleteBakul={handleDeleteBakul}
             />
           )}
+          {menu === "overdue" && (            
+            <OverdueTab
+            bakulRecords={bakulRecords}    
+            role={role}
+            onUpdateBakul={handleUpdateBakul}
+            onDeleteBakul={handleDeleteBakul}
+            overdueThresholdDays={3}
+            />
+          )}
 
-{menu === "ops" && (
+          {menu === "ops" && (
             <OpsTab
               ops={ops}
               categories={categories}
@@ -1086,7 +1098,7 @@ const handleResetData = async () => {
             />
           )}
 
-{menu === "laporan" && (
+          {menu === "laporan" && (
             <FinancialReportTab
               stockOut={stockOut}
               stockIn={stockIn}
