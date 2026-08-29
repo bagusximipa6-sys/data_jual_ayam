@@ -18,12 +18,13 @@ const entityLabel: Record<string, string> = {
 };
 
 // Tanggal hari ini dalam format ISO (YYYY-MM-DD) sesuai zona waktu lokal server.
-const todayISO = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+export const todayISO = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 };
 
 // Penguncian Harian (Daily Lock): record dengan tanggal < hari ini dianggap terkunci.
@@ -67,6 +68,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Akses ditolak. Restore data hanya untuk admin." }, { status: 403 });
     }
 
+    let rejectedLockedCount = 0;
+
     let data: AppDataSet = {
       sales: body.sales ?? [],
       bakulRecords: body.bakulRecords ?? [],
@@ -85,31 +88,49 @@ export async function POST(request: NextRequest) {
     // yang diubah/dihapus/ditambah, tolak permintaan. (Dilewatkan saat `force`.)
     if (!force) {
       const current = await loadAllData();
-      const keepUnlockedOnly = <T extends { date: string }>(records: T[]) =>
-        records.filter((record) => !isLockedDate(record.date));
+      const mergeWithGuard = <T extends { id?: string; date: string }>(
+      currentList: T[],
+      incomingList: T[]
+      ): { merged: T[]; rejected: number } => {
+      const currentIds = new Set(currentList.map((r) => r.id).filter(Boolean));
+      const protectedOld = currentList.filter((r) => isLockedDate(r.date));
 
-      // Karena endpoint ini memakai model full-replace, payload normal selalu
-      // membawa snapshot lengkap. Untuk daily lock, pertahankan record lampau
-      // dari DB dan hanya terima perubahan pada tanggal hari ini/masa depan.
+      let rejected = 0;
+      const acceptedIncoming = incomingList.filter((r) => {
+       const locked = isLockedDate(r.date);
+       const existsInDb = !!r.id && currentIds.has(r.id);
+       if (locked && existsInDb) {
+         rejected += 1; // ini edit/hapus pada data lama yang terkunci -> ditolak (benar)
+         return false;
+       }
+       return true; // baik itu tidak locked, ATAU locked tapi memang record baru -> diterima
+      });
+
+      const seen = new Set<string>();
+      const merged: T[] = [];
+      for (const r of [...protectedOld, ...acceptedIncoming]) {
+        const key = r.id ?? JSON.stringify(r);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(r);
+      }
+      return { merged, rejected };
+    };
+
+      const stockInResult = mergeWithGuard(current.stockIn, data.stockIn);
+      const stockOutResult = mergeWithGuard(current.stockOut, data.stockOut);
+      const opsResult = mergeWithGuard(current.ops, data.ops);
+      const penyusutanResult = mergeWithGuard(current.penyusutan, data.penyusutan);
+
       data = {
         ...data,
-        stockIn: [
-          ...current.stockIn.filter((record) => isLockedDate(record.date)),
-          ...keepUnlockedOnly(data.stockIn),
-        ],
-        stockOut: [
-          ...current.stockOut.filter((record) => isLockedDate(record.date)),
-          ...keepUnlockedOnly(data.stockOut),
-        ],
-        ops: [
-          ...current.ops.filter((record) => isLockedDate(record.date)),
-          ...keepUnlockedOnly(data.ops),
-        ],
-        penyusutan: [
-          ...current.penyusutan.filter((record) => isLockedDate(record.date)),
-          ...keepUnlockedOnly(data.penyusutan),
-        ],
-      };
+        stockIn: stockInResult.merged,
+        stockOut: stockOutResult.merged,
+        ops: opsResult.merged,
+        penyusutan: penyusutanResult.merged,
+      };   
+    rejectedLockedCount =
+       stockInResult.rejected + stockOutResult.rejected + opsResult.rejected + penyusutanResult.rejected;
 
       // 4) Piutang Bakul: sengaja TIDAK dikunci (daily lock dimatikan)
       //    agar pengguna dapat menambah/mengubah/menghapus piutang pada tanggal hari sebelumnya.
@@ -134,7 +155,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      ...(rejectedLockedCount > 0 ? { rejectedLockedCount } : {}),
+    });
   } catch (err) {
     console.error("POST /api/data error:", err);
     return NextResponse.json(

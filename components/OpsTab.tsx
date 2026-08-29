@@ -18,6 +18,8 @@ import { useState } from "react";
 import { getTodayDate, rupiah, toNumber } from "@/lib/utils";
 import { OperationalRecord, Role } from "@/types/finance";
 
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 // Penguncian Harian: tanggal lampau (lebih kecil dari hari ini) terkunci read-only.
 const isRecordLocked = (date: string): boolean => {
   const today = getTodayDate();
@@ -29,8 +31,8 @@ interface OpsTabProps {
   categories: string[];
   role: Role;
   onAddOps: (record: OperationalRecord) => void;
-  onUpdateOps: (index: number, record: OperationalRecord) => void;
-  onDeleteOps: (index: number) => void;
+  onUpdateOps: (id: string, record: OperationalRecord) => void;
+  onDeleteOps: (id: string) => void;
   onAddOpsCategory?: (category: string) => void;
 }
 
@@ -43,15 +45,13 @@ export function OpsTab({
   onDeleteOps,
   onAddOpsCategory,
 }: OpsTabProps) {
-const [search, setSearch] = useState("");
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [customCategoryInput, setCustomCategoryInput] = useState("");
-  // Tanggal terpilih untuk melihat Riwayat Operasional (seperti Laporan Harian).
   const [historyDate, setHistoryDate] = useState<string>(getTodayDate());
 
-  // Staf Operasional & Admin dapat mengelola data operasional.
   const canManageOps = role === "admin" || role === "staf";
 
   const [form, setForm] = useState({
@@ -63,8 +63,8 @@ const [search, setSearch] = useState("");
 
   const amountNum = toNumber(form.amount);
 
-  const handleStartEdit = (item: OperationalRecord, originalIndex: number) => {
-    setEditingIndex(originalIndex);
+  const handleStartEdit = (item: OperationalRecord) => {
+    setEditingId(item.id);
     setForm({
       date: item.date,
       description: item.description,
@@ -75,7 +75,7 @@ const [search, setSearch] = useState("");
   };
 
   const handleCancelEdit = () => {
-    setEditingIndex(null);
+    setEditingId(null);
     setForm({
       date: getTodayDate(),
       description: categories[0] || "bensin + parkir",
@@ -86,25 +86,26 @@ const [search, setSearch] = useState("");
     setCustomCategoryInput("");
   };
 
-const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalDesc = isCustomCategory ? customCategoryInput.trim() : form.description.trim();
     if (!finalDesc || !amountNum) return;
 
-    // Register new custom category to master categories
     if (isCustomCategory && onAddOpsCategory) {
       onAddOpsCategory(finalDesc);
     }
 
+    // [PERBAIKAN] OperationalRecord sekarang wajib punya id
     const record: OperationalRecord = {
+      id: editingId ?? uid(),
       date: form.date,
       description: finalDesc,
       amount: amountNum,
       note: form.note.trim(),
     };
 
-    if (editingIndex !== null) {
-      onUpdateOps(editingIndex, record);
+    if (editingId !== null) {
+      onUpdateOps(editingId, record);
     } else {
       onAddOps(record);
     }
@@ -112,11 +113,9 @@ const handleSubmit = (e: React.FormEvent) => {
     handleCancelEdit();
   };
 
-  // Riwayat disaring berdasarkan tanggal terpilih (historyDate), dikombinasikan dengan pencarian teks.
   const filteredOps = ops
     .filter((item) => item.date === historyDate)
-    .map((item, originalIndex) => ({ item, originalIndex }))
-    .filter(({ item }) => {
+    .filter((item) => {
       if (!search.trim()) return true;
       const query = search.toLowerCase();
       return (
@@ -130,9 +129,9 @@ const handleSubmit = (e: React.FormEvent) => {
     <div className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
       {/* Form Panel */}
       <div className="rounded-2xl border border-[#191712]/10 bg-white p-5 shadow-sm sm:p-6">
-<h2 className="text-xl font-black text-[#191712]">
+        <h2 className="text-xl font-black text-[#191712]">
           {canManageOps
-            ? editingIndex === null
+            ? editingId === null
               ? "Input Biaya Operasional"
               : "Edit Biaya Operasional"
             : "Akses Mode User"}
@@ -225,11 +224,11 @@ const handleSubmit = (e: React.FormEvent) => {
                 type="submit"
                 className="flex-1 bg-[#191712] font-bold text-white shadow-sm"
                 radius="sm"
-                startContent={editingIndex === null ? <Plus size={16} /> : <Edit2 size={16} />}
+                startContent={editingId === null ? <Plus size={16} /> : <Edit2 size={16} />}
               >
-                {editingIndex === null ? "Simpan Biaya Operasional" : "Simpan Perubahan"}
+                {editingId === null ? "Simpan Biaya Operasional" : "Simpan Perubahan"}
               </Button>
-              {editingIndex !== null && (
+              {editingId !== null && (
                 <Button variant="flat" onPress={handleCancelEdit} radius="sm">
                   Batal
                 </Button>
@@ -278,9 +277,9 @@ const handleSubmit = (e: React.FormEvent) => {
                 Tidak ditemukan rincian operasional.
               </div>
             ) : (
-              filteredOps.map(({ item, originalIndex }) => (
+              filteredOps.map((item) => (
                 <Card
-                  key={`${item.date}-${item.description}-${originalIndex}`}
+                  key={item.id}
                   shadow="none"
                   radius="sm"
                   className="border border-[#191712]/10 bg-white transition-all hover:border-[#191712]/30"
@@ -302,7 +301,7 @@ const handleSubmit = (e: React.FormEvent) => {
                             variant="flat"
                             className="font-bold min-w-unit-12"
                             isDisabled={isRecordLocked(item.date)}
-                            onPress={() => handleStartEdit(item, originalIndex)}
+                            onPress={() => handleStartEdit(item)}
                             radius="sm"
                           >
                             {isRecordLocked(item.date) ? "🔒 Edit" : "Edit"}
@@ -312,7 +311,7 @@ const handleSubmit = (e: React.FormEvent) => {
                             variant="flat"
                             className="bg-[#ffe2d8] font-bold text-[#8f321a] min-w-unit-12"
                             isDisabled={isRecordLocked(item.date)}
-                            onPress={() => setDeleteConfirmIndex(originalIndex)}
+                            onPress={() => setDeleteConfirmId(item.id)}
                             radius="sm"
                           >
                             Hapus
@@ -329,7 +328,7 @@ const handleSubmit = (e: React.FormEvent) => {
       )}
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={deleteConfirmIndex !== null} onClose={() => setDeleteConfirmIndex(null)} size="sm">
+      <Modal isOpen={deleteConfirmId !== null} onClose={() => setDeleteConfirmId(null)} size="sm">
         <ModalContent>
           <ModalHeader className="flex items-center gap-2 text-rose-700">
             <AlertCircle size={20} />
@@ -338,19 +337,22 @@ const handleSubmit = (e: React.FormEvent) => {
           <ModalBody className="pb-6">
             <p className="text-sm text-slate-700">
               Apakah Anda yakin ingin menghapus catatan operasional{" "}
-              <strong>{deleteConfirmIndex !== null ? ops[deleteConfirmIndex]?.description : ""}</strong>?
+              <strong>
+                {deleteConfirmId !== null ? ops.find((o) => o.id === deleteConfirmId)?.description : ""}
+              </strong>
+              ?
             </p>
             <div className="flex justify-end gap-2 mt-4">
-              <Button variant="flat" radius="sm" onPress={() => setDeleteConfirmIndex(null)}>
+              <Button variant="flat" radius="sm" onPress={() => setDeleteConfirmId(null)}>
                 Batal
               </Button>
               <Button
                 className="bg-rose-600 font-bold text-white"
                 radius="sm"
                 onPress={() => {
-                  if (deleteConfirmIndex !== null) {
-                    onDeleteOps(deleteConfirmIndex);
-                    setDeleteConfirmIndex(null);
+                  if (deleteConfirmId !== null) {
+                    onDeleteOps(deleteConfirmId);
+                    setDeleteConfirmId(null);
                   }
                 }}
               >

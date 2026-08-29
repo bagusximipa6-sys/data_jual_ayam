@@ -63,22 +63,29 @@ export async function fetchAllFromServer(): Promise<Partial<LocalDataset> | null
 // Menyimpan seluruh data ke server POST /api/data.
 // `opts.force = true` digunakan untuk Restore/Import penuh (oleh admin):
 // menonaktifkan Guard Penguncian Harian agar data tanggal lampau dari backup
-// dapat ditulis. Mengembalikan { ok: boolean; error?: string }.
+// dapat ditulis. Mengembalikan { ok: boolean; error?: string; rejectedLockedCount?: number }.
+// `rejectedLockedCount` > 0 berarti sebagian perubahan ditolak server karena
+// mencoba mengubah/menghapus data pada tanggal yang sudah terkunci — client
+// WAJIB memberi tahu user soal ini, jangan didiamkan.
 export async function pushAllToServer(
   data: LocalDataset,
   opts: { force?: boolean } = {}
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; rejectedLockedCount?: number }> {
   try {
     const res = await fetch("/api/data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...data, force: opts.force === true }),
     });
-    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const json = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      rejectedLockedCount?: number;
+    };
     if (!res.ok || json.ok !== true) {
       return { ok: false, error: json.error || `HTTP ${res.status}` };
     }
-    return { ok: true };
+    return { ok: true, rejectedLockedCount: json.rejectedLockedCount };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Gagal terhubung ke server." };
   }
@@ -111,10 +118,9 @@ export function emptyDataset(): LocalDataset {
     items: [...EMPTY.items],
     bakulMasters: [...EMPTY.bakulMasters],
     stockIn: [...EMPTY.stockIn],
-stockOut: [...EMPTY.stockOut],
+    stockOut: [...EMPTY.stockOut],
     opsCategories: [...EMPTY.opsCategories],
     penyusutan: [...EMPTY.penyusutan],
     priceHistory: [...EMPTY.priceHistory],
   };
 }
-

@@ -483,7 +483,7 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     const deleted = bakulRecords[index];
     if (!deleted) return;
     setBakulRecords((prev) => prev.filter((_, i) => i !== index));
-    if (deleted) recordActivity("delete", "Piutang Bakul", "", `${deleted.name} • ${deleted.date}`);
+    recordActivity("delete", "Piutang Bakul", "", `${deleted.name} • ${deleted.date}`);
   };
 
   // CRUD Master Barang
@@ -552,8 +552,11 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     recordActivity("add", "Barang Masuk", snapshot.id, `${snapshot.itemName} • ${snapshot.date} (+${snapshot.quantity} kg)`);
   };
   const handleUpdateStockIn = (id: string, record: StockInRecord) => {
-    const existing = stockIn.find(s => s.id === id);
-    if (isRecordLocked(existing?.date ?? record.date)) return;
+      const existing = stockIn.find(s => s.id === id);
+      if (isRecordLocked(existing?.date ?? record.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa diedit.");
+      return;
+    }
     // Snapshot ulang harga beli yang berlaku pada tanggal transaksi.
     const itemMaster = items.find((i) => i.name.toLowerCase() === record.itemName.toLowerCase());
     const active = itemMaster
@@ -565,9 +568,13 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
   };
   const handleDeleteStockIn = (id: string) => {
     const deleted = stockIn.find(s => s.id === id);
-    if (!deleted || isRecordLocked(deleted.date)) return;
+    if (!deleted) return;
+    if (isRecordLocked(deleted.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa dihapus.");
+      return;
+    }
     setStockIn((prev) => prev.filter((item) => item.id !== id));
-    if (deleted) recordActivity("delete", "Barang Masuk", deleted.id, `${deleted.itemName} • ${deleted.date}`);
+    recordActivity("delete", "Barang Masuk", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
 
   const stockOutPiutangNote = (id: string) => `Auto dari Barang Keluar: ${id}`;
@@ -584,10 +591,6 @@ const handleUpdateBakul = (index: number, updatedRecord: BakulRecord) => {
     };
   };
 
-// Resolver Harga Modal (COGS) per transaksi penjualan.
-// Prioritas 1: Barang Masuk yang tertaut (stockInId) — referensi dinamis.
-// Prioritas 2: Barang Masuk aktif pada tanggal transaksi (date-aware).
-// Prioritas 3: harga beli master / snapshot.
 const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPrice: number; stockInId?: string } => {
   // Jika transaksi tertaut ke Barang Masuk: pakai barang & harga beli dari sana.
   const linked = record.stockInId ? stockIn.find((si) => si.id === record.stockInId) : undefined;
@@ -646,7 +649,10 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
   };
   const handleUpdateStockOut = (id: string, record: StockOutRecord) => {
     const previousRecord = stockOut.find(s => s.id === id);
-    if (isRecordLocked(previousRecord?.date ?? record.date)) return;
+    if (isRecordLocked(previousRecord?.date ?? record.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa diedit.");
+      return;
+    }
     const previousNote = previousRecord ? stockOutPiutangNote(previousRecord.id) : stockOutPiutangNote(record.id);
     const cogs = resolveStockOutCogs(record);
     const itemMaster = items.find((i) => i.name.toLowerCase() === cogs.itemName.toLowerCase());
@@ -671,7 +677,11 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
   };
   const handleDeleteStockOut = (id: string) => {
     const recordToDelete = stockOut.find(s => s.id === id);
-    if (!recordToDelete || isRecordLocked(recordToDelete.date)) return;
+    if (!recordToDelete) return;
+    if (isRecordLocked(recordToDelete.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa dihapus.");
+      return;
+    }
 
     const splitGroupId = recordToDelete.stockOutGroupId;
     const isSplitMember = Boolean(splitGroupId) || recordToDelete.birdCount != null;
@@ -702,7 +712,11 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
   // [BARU] Fungsi atomik untuk edit dengan auto-splitting: hapus yang lama, tambah yang baru dalam satu state update.
   const handleUpdateAndResplitStockOut = (deleteIndex: number, recordsToAdd: StockOutRecord[]) => {
     const deletedRecord = stockOut[deleteIndex];
-    if (!deletedRecord || isRecordLocked(deletedRecord.date)) return;
+    if (!deletedRecord) return;
+    if (isRecordLocked(deletedRecord.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa diedit.");
+      return;
+    }
 
     const splitGroupId = deletedRecord.stockOutGroupId;
     const recordsToDelete = splitGroupId
@@ -729,19 +743,27 @@ const resolveStockOutCogs = (record: StockOutRecord): { itemName: string; buyPri
 
   // CRUD Biaya Operasional
   const handleAddOps = (record: OperationalRecord) => {
-    setOps((prev) => [record, ...prev]);
+    const withId: OperationalRecord = { ...record, id: record.id || uid() };
+    setOps((prev) => [withId, ...prev]);
     recordActivity("add", "Operasional", "", `${record.description} • ${record.date}`);
   };
-  const handleUpdateOps = (index: number, record: OperationalRecord) => {
-    if (isRecordLocked(ops[index]?.date ?? record.date)) return;
-    setOps((prev) => prev.map((item, i) => (i === index ? record : item)));
-    recordActivity("update", "Operasional", "", `${record.description} • ${record.date}`);
+    const handleUpdateOps = (id: string, record: OperationalRecord) => {
+    const existing = ops.find((o) => o.id === id);
+    if (isRecordLocked(existing?.date ?? record.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa diedit.");
+      return;
+    }
+    setOps((prev) => prev.map((item) => (item.id === id ? { ...record, id } : item)));
+    recordActivity("update", "Operasional", id, `${record.description} • ${record.date}`);
   };
-  const handleDeleteOps = (index: number) => {
-    const deleted = ops[index];
-    if (!deleted || isRecordLocked(deleted.date)) return;
-    setOps((prev) => prev.filter((_, i) => i !== index));
-    if (deleted) recordActivity("delete", "Operasional", "", `${deleted.description} • ${deleted.date}`);
+    const handleDeleteOps = (id: string) => {
+    const deleted = ops.find((o) => o.id === id);
+    if (!deleted || isRecordLocked(deleted.date)) {
+      if (deleted) alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa dihapus.");
+      return;
+    }
+    setOps((prev) => prev.filter((item) => item.id !== id));
+    recordActivity("delete", "Operasional", id, `${deleted.description} • ${deleted.date}`);
   };
 
   // CRUD Master Kategori Operasional
@@ -760,9 +782,13 @@ const handleDeleteOpsCategory = (category: string) => {
 
 const handleDeletePenyusutan = (index: number) => {
     const deleted = penyusutan[index];
-    if (!deleted || isRecordLocked(deleted.date)) return;
+    if (!deleted) return;
+    if (isRecordLocked(deleted.date)) {
+      alert("Data ini bertanggal lampau dan sudah terkunci, tidak bisa dihapus.");
+      return;
+    }
     setPenyusutan((prev) => prev.filter((_, i) => i !== index));
-    if (deleted) recordActivity("delete", "Penyusutan", deleted.id, `${deleted.itemName} • ${deleted.date}`);
+    recordActivity("delete", "Penyusutan", deleted.id, `${deleted.itemName} • ${deleted.date}`);
   };
 
   // Daily Stock Reset: simpan beberapa catatan penyusutan otomatis sekaligus.

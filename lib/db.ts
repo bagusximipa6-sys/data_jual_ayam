@@ -32,6 +32,10 @@ export type AppDataSet = {
 const num = (v: unknown): number =>
   typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) || 0 : 0;
 
+// Helper fallback UUID (JS) kalau gen_random_uuid() tidak tersedia di Postgres
+const jsUUID = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 8)}`;
+
 // === Pastikan kolom yang dipakai aplikasi ada (idempotent) ===
 // Dipanggil sebelum load/save agar aplikasi tetap online walau DB produksi
 // (Vercel) belum dimigrasi atau dibuat dari skema lama.
@@ -48,9 +52,40 @@ export async function ensureDatabaseSchema(): Promise<void> {
     await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash'`;
     await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC`;
     await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb`;
+
+    // [BARU] Pastikan ops_records punya kolom id
+    await db.sql`ALTER TABLE ops_records ADD COLUMN IF NOT EXISTS id TEXT`;
   } catch {
     // Abaikan bila gagal (mis. tidak punya izin) — query utama
     // akan tetap mencoba dan fallback di bawah.
+  }
+
+  // [BARU] Backfill id untuk baris lama di ops_records.
+  // Coba pakai gen_random_uuid() (Vercel Postgres biasanya support).
+  // Kalau gagal, fallback ke JS UUID per baris.
+  try {
+    await db.sql`
+      UPDATE ops_records
+      SET id = gen_random_uuid()::text
+      WHERE id IS NULL OR id = ''
+    `;
+  } catch {
+    try {
+      const { rows } = await db.sql<{ date: string; description: string }>`
+        SELECT date, description FROM ops_records WHERE id IS NULL OR id = ''
+      `;
+      for (const row of rows) {
+        await db.sql`
+          UPDATE ops_records
+          SET id = ${jsUUID()}
+          WHERE date = ${row.date} AND description = ${row.description}
+            AND (id IS NULL OR id = '')
+        `;
+      }
+    } catch {
+      // Jika backfill tetap gagal, aplikasi tetap jalan;
+      // id akan digenerate saat save berikutnya.
+    }
   }
 }
 
@@ -111,7 +146,8 @@ type SaleRow = {
   note: string;
 };
 type BakulRow = { date: string; name: string; bill: number; paid: number; balance: number; note: string };
-type OpsRow = { date: string; description: string; amount: number; note: string };
+// [BARU] Ditambahkan field id
+type OpsRow = { id: string; date: string; description: string; amount: number; note: string };
 type MetaRow = { opsCategories: string[] };
 
 // === Load seluruh data dari DB ===
@@ -119,15 +155,16 @@ export async function loadAllData(): Promise<AppDataSet> {
   // Pastikan kolom baru ada sebelum query (agar tetap online walau belum migrasi).
   await ensureDatabaseSchema();
 
-const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR, priceHistoryR] =
+  const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR, priceHistoryR] =
     await Promise.all([
-      db.sql`SELECT id, name, buy_price AS "buyPrice" FROM items ORDER BY created_at ASC`, // Tetap benar
-      db.sql`SELECT id, name, sell_price AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`, // Tetap benar
+      db.sql`SELECT id, name, buy_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
+      db.sql`SELECT id, name, sell_price AS "sellPrice" FROM bakul_masters ORDER BY created_at ASC`,
       db.sql`SELECT id, date, item_name AS "itemName", quantity, buy_price AS "buyPrice", bird_count AS "birdCount", weighings FROM stock_in ORDER BY created_at ASC, id ASC`,
       db.sql`SELECT id, date, bakul_name AS "bakulName", item_name AS "itemName", quantity, price, buy_price AS "buyPrice", stock_in_id AS "stockInId", stock_out_group_id AS "stockOutGroupId", sale_type AS "saleType", payment_method AS "paymentMethod", bird_count AS "birdCount", weighings FROM stock_out ORDER BY created_at ASC, id ASC`,
       db.sql`SELECT date, modal_qty AS "modalQty", modal_total AS "modalTotal", sale_qty AS "saleQty", sale_total AS "saleTotal", shrink, target, gross_profit AS "grossProfit", difference, operational, net_profit AS "netProfit", note FROM sales ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT date, name, bill, paid, balance, note FROM bakul_records ORDER BY position ASC, created_at ASC`,
-      db.sql`SELECT date, description, amount, note FROM ops_records ORDER BY position ASC, created_at ASC`,
+      // [BARU] Ambil juga kolom id
+      db.sql`SELECT id, date, description, amount, note FROM ops_records ORDER BY position ASC, created_at ASC`,
       db.sql`SELECT ops_categories AS "opsCategories" FROM app_meta WHERE id = 1`,
       db.sql`SELECT id, date, item_name AS "itemName", expected_stock AS "expectedStock", actual_stock AS "actualStock", amount FROM penyusutan ORDER BY created_at ASC`,
       db.sql`SELECT id, item_id AS "itemId", buy_price AS "buyPrice", sell_price AS "sellPrice", effective_at AS "effectiveAt" FROM price_history ORDER BY effective_at ASC, created_at ASC`,
@@ -145,7 +182,7 @@ const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, 
     sellPrice: num(r.sellPrice),
   }));
 
-const stockIn: StockInRecord[] = (stockInR.rows as unknown as StockInRow[]).map((r) => ({
+  const stockIn: StockInRecord[] = (stockInR.rows as unknown as StockInRow[]).map((r) => ({
     id: r.id,
     date: r.date,
     itemName: r.itemName,
@@ -155,13 +192,13 @@ const stockIn: StockInRecord[] = (stockInR.rows as unknown as StockInRow[]).map(
     weighings: Array.isArray(r.weighings) ? r.weighings : [],
   }));
 
-const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).map((r) => ({
+  const stockOut: StockOutRecord[] = (stockOutR.rows as unknown as StockOutRow[]).map((r) => ({
     id: r.id,
     date: r.date,
     bakulName: r.bakulName,
     itemName: r.itemName,
     quantity: num(r.quantity),
-price: num(r.price),
+    price: num(r.price),
     buyPrice: num(r.buyPrice),
     stockInId: r.stockInId != null && r.stockInId !== "" ? r.stockInId : undefined,
     stockOutGroupId: r.stockOutGroupId != null && r.stockOutGroupId !== "" ? r.stockOutGroupId : undefined,
@@ -199,19 +236,21 @@ price: num(r.price),
     note: r.note ?? "",
   }));
 
+  // [BARU] Mapping id dari DB ke objek OperationalRecord
   const ops: OperationalRecord[] = (opsR.rows as unknown as OpsRow[]).map((r) => ({
+    id: r.id,
     date: r.date,
     description: r.description,
     amount: num(r.amount),
     note: r.note ?? "",
   }));
 
-const metaRow = metaR.rows[0] as unknown as MetaRow | undefined;
+  const metaRow = metaR.rows[0] as unknown as MetaRow | undefined;
   const opsCategories: string[] = Array.isArray(metaRow?.opsCategories)
     ? metaRow.opsCategories
     : [];
 
-const penyusutan: PenyusutanRecord[] = (penyusutanR.rows as unknown as PenyusutanRow[]).map((r) => ({
+  const penyusutan: PenyusutanRecord[] = (penyusutanR.rows as unknown as PenyusutanRow[]).map((r) => ({
     id: r.id,
     date: r.date,
     itemName: r.itemName,
@@ -236,7 +275,7 @@ export async function saveAllData(data: AppDataSet): Promise<void> {
   // Pastikan kolom baru ada sebelum INSERT (agar save tidak gagal di DB lama).
   await ensureDatabaseSchema();
 
-const {
+  const {
     sales,
     bakulRecords,
     ops,
@@ -249,7 +288,7 @@ const {
     priceHistory,
   } = data;
 
-const client = await db.connect();
+  const client = await db.connect();
   try {
     await client.sql`BEGIN`;
     await client.sql`DELETE FROM items`;
@@ -274,16 +313,16 @@ const client = await db.connect();
         INSERT INTO bakul_masters (id, name, sell_price) VALUES (${m.id}, ${m.name}, ${m.sellPrice ?? 0})
       `;
     }
-// Stock in
+    // Stock in
     for (const r of stockIn) {
       await client.sql`
         INSERT INTO stock_in (id, date, item_name, quantity, buy_price, bird_count, weighings)
         VALUES (${r.id}, ${r.date}, ${r.itemName}, ${r.quantity}, ${r.buyPrice}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
     }
-// Stock out
+    // Stock out
     for (const r of stockOut) {
-await client.sql`
+      await client.sql`
         INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, stock_in_id, stock_out_group_id, sale_type, payment_method, bird_count, weighings)
         VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.stockInId ?? ""}, ${r.stockOutGroupId ?? ""}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
       `;
@@ -311,12 +350,14 @@ await client.sql`
         VALUES (${b.date}, ${b.name}, ${b.bill}, ${b.paid}, ${b.balance}, ${b.note ?? ""}, ${i})
       `;
     }
-// Ops records
+    // Ops records
     for (let i = 0; i < ops.length; i++) {
       const o = ops[i];
+      // [BARU] Sertakan id; fallback ke JS UUID kalau belum ada
+      const recordId = o.id || jsUUID();
       await client.sql`
-        INSERT INTO ops_records (date, description, amount, note, position)
-        VALUES (${o.date}, ${o.description}, ${o.amount}, ${o.note ?? ""}, ${i})
+        INSERT INTO ops_records (id, date, description, amount, note, position)
+        VALUES (${recordId}, ${o.date}, ${o.description}, ${o.amount}, ${o.note ?? ""}, ${i})
       `;
     }
     // Penyusutan
@@ -400,7 +441,7 @@ export async function resetAllData(): Promise<void> {
     await client.sql`DELETE FROM stock_out`;
     await client.sql`DELETE FROM sales`;
     await client.sql`DELETE FROM bakul_records`;
-await client.sql`DELETE FROM ops_records`;
+    await client.sql`DELETE FROM ops_records`;
     await client.sql`DELETE FROM penyusutan`;
     await client.sql`DELETE FROM price_history`;
     await client.sql`UPDATE app_meta SET ops_categories = '[]'::jsonb, updated_at = now() WHERE id = 1`;

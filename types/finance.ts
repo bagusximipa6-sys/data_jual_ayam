@@ -23,6 +23,7 @@ export type BakulRecord = {
 };
 
 export type OperationalRecord = {
+  id: string;
   date: string;
   description: string;
   amount: number;

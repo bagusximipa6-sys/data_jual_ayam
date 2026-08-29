@@ -143,11 +143,12 @@ export const formatCurrencyInput = (value: string): string => {
 export const unique = (items: string[]) => Array.from(new Set(items.filter(Boolean))).sort();
 
 export const getTodayDate = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 };
 
 // === Sisa stok harian per barang pada tanggal tertentu ===
