@@ -22,7 +22,7 @@
     "jspdf-autotable": "^5.0.8",
     "lamejs": "^1.2.1",
     "lucide-react": "^1.23.0",
-    "next": "16.1.6",
+    "next": "16.4.5",
     "node-lame": "^2.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3"
@@ -36,7 +36,7 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "@opennextjs/cloudflare": "^1.3.0",
+    "@opennextjs/cloudflare": "^1.20.0",
     "wrangler": "^4.0.0"
   }
 }
