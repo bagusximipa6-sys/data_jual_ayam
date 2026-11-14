@@ -1,6 +1,7 @@
 import type {
   BakulMaster,
   BakulRecord,
+  DashboardSnapshot,
   DailySale,
   ItemMaster,
   OperationalRecord,
@@ -123,4 +124,16 @@ export function emptyDataset(): LocalDataset {
     penyusutan: [...EMPTY.penyusutan],
     priceHistory: [...EMPTY.priceHistory],
   };
+}
+
+export async function fetchDashboardFromServer(date: string): Promise<DashboardSnapshot | null> {
+  try {
+    const params = new URLSearchParams({ scope: "dashboard", date });
+    const res = await fetch(`/api/data?${params.toString()}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { ok?: boolean; data?: DashboardSnapshot };
+    return json.ok && json.data ? json.data : null;
+  } catch {
+    return null;
+  }
 }

@@ -1,9 +1,10 @@
-import { db } from "@vercel/postgres";
+import { db, type VercelPoolClient } from "@vercel/postgres";
 import type {
   ActivityAction,
   ActivityLog,
   BakulMaster,
   BakulRecord,
+  DashboardSnapshot,
   DailySale,
   ItemMaster,
   OperationalRecord,
@@ -36,57 +37,40 @@ const num = (v: unknown): number =>
 const jsUUID = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 8)}`;
 
-// === Pastikan kolom yang dipakai aplikasi ada (idempotent) ===
-// Dipanggil sebelum load/save agar aplikasi tetap online walau DB produksi
-// (Vercel) belum dimigrasi atau dibuat dari skema lama.
-export async function ensureDatabaseSchema(): Promise<void> {
-  try {
-    await db.sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0`;
-    await db.sql`ALTER TABLE bakul_masters ADD COLUMN IF NOT EXISTS sell_price NUMERIC NOT NULL DEFAULT 0`;
-    await db.sql`ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS bird_count NUMERIC`;
-    await db.sql`ALTER TABLE stock_in ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS buy_price NUMERIC NOT NULL DEFAULT 0`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_in_id TEXT DEFAULT ''`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS stock_out_group_id TEXT DEFAULT ''`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS sale_type TEXT DEFAULT 'eceran'`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash'`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS bird_count NUMERIC`;
-    await db.sql`ALTER TABLE stock_out ADD COLUMN IF NOT EXISTS weighings JSONB DEFAULT '[]'::jsonb`;
+const INSERT_CHUNK_SIZE = 500;
 
-    // [BARU] Pastikan ops_records punya kolom id
-    await db.sql`ALTER TABLE ops_records ADD COLUMN IF NOT EXISTS id TEXT`;
-  } catch {
-    // Abaikan bila gagal (mis. tidak punya izin) — query utama
-    // akan tetap mencoba dan fallback di bawah.
-  }
+async function bulkInsert(
+  client: VercelPoolClient,
+  table: string,
+  columns: string[],
+  rows: (string | number | null)[][],
+  options: { jsonbColumns?: number[]; onConflict?: string } = {}
+): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(offset, offset + INSERT_CHUNK_SIZE);
+    const values: (string | number | null)[] = [];
+    const tuples = chunk.map((row) => {
+      const placeholders = row.map((value, columnIndex) => {
+        values.push(value);
+        const placeholder = `$${values.length}`;
+        return options.jsonbColumns?.includes(columnIndex) ? `${placeholder}::jsonb` : placeholder;
+      });
+      return `(${placeholders.join(", ")})`;
+    });
 
-  // [BARU] Backfill id untuk baris lama di ops_records.
-  // Coba pakai gen_random_uuid() (Vercel Postgres biasanya support).
-  // Kalau gagal, fallback ke JS UUID per baris.
-  try {
-    await db.sql`
-      UPDATE ops_records
-      SET id = gen_random_uuid()::text
-      WHERE id IS NULL OR id = ''
-    `;
-  } catch {
-    try {
-      const { rows } = await db.sql<{ date: string; description: string }>`
-        SELECT date, description FROM ops_records WHERE id IS NULL OR id = ''
-      `;
-      for (const row of rows) {
-        await db.sql`
-          UPDATE ops_records
-          SET id = ${jsUUID()}
-          WHERE date = ${row.date} AND description = ${row.description}
-            AND (id IS NULL OR id = '')
-        `;
-      }
-    } catch {
-      // Jika backfill tetap gagal, aplikasi tetap jalan;
-      // id akan digenerate saat save berikutnya.
-    }
+    await client.query(
+      `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${tuples.join(", ")}${options.onConflict ?? ""}`,
+      values
+    );
   }
+}
+
+function uniqueById<T extends { id: string }>(records: T[]): T[] {
+  return [...new Map(records.map((record) => [record.id, record])).values()];
+}
+
+function ensureSchemaOnce(): Promise<void> {
+  return Promise.resolve();
 }
 
 // === Tipe baris hasil query ===
@@ -150,10 +134,67 @@ type BakulRow = { date: string; name: string; bill: number; paid: number; balanc
 type OpsRow = { id: string; date: string; description: string; amount: number; note: string };
 type MetaRow = { opsCategories: string[] };
 
+type DashboardItemRow = { id: string; name: string; buyPrice: number };
+type DashboardDailyItemRow = { itemName: string; quantity: number; omzet: number; count: number };
+
+export async function loadDashboardSnapshot(date: string): Promise<DashboardSnapshot> {
+  await ensureSchemaOnce();
+
+  const [itemsR, dailyItemsR, stockInR, penyusutanR, hasDataR] = await Promise.all([
+    db.sql`SELECT id, name, buy_price AS "buyPrice" FROM items ORDER BY created_at ASC`,
+    db.sql<DashboardDailyItemRow>`
+      SELECT item_name AS "itemName", SUM(quantity) AS quantity,
+        SUM(quantity * price) AS omzet, COUNT(*) AS count
+      FROM stock_out WHERE date = ${date} GROUP BY item_name
+    `,
+    db.sql`SELECT COALESCE(SUM(quantity), 0) AS quantity FROM stock_in WHERE date = ${date}`,
+    db.sql`SELECT COALESCE(SUM(amount), 0) AS amount FROM penyusutan`,
+    db.sql`
+      SELECT (
+        EXISTS (SELECT 1 FROM sales LIMIT 1)
+        OR EXISTS (SELECT 1 FROM bakul_records LIMIT 1)
+        OR EXISTS (SELECT 1 FROM ops_records LIMIT 1)
+        OR EXISTS (SELECT 1 FROM items LIMIT 1)
+        OR EXISTS (SELECT 1 FROM bakul_masters LIMIT 1)
+        OR EXISTS (SELECT 1 FROM stock_in LIMIT 1)
+        OR EXISTS (SELECT 1 FROM stock_out LIMIT 1)
+        OR COALESCE((SELECT jsonb_array_length(ops_categories) FROM app_meta WHERE id = 1), 0) > 0
+      ) AS "hasData"
+    `,
+  ]);
+
+  const items = (itemsR.rows as unknown as DashboardItemRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    buyPrice: num(row.buyPrice),
+  }));
+  const dailyItems = (dailyItemsR.rows as unknown as DashboardDailyItemRow[]).map((row) => ({
+    itemName: row.itemName,
+    quantity: num(row.quantity),
+    omzet: num(row.omzet),
+  }));
+  const dailyQuantity = dailyItems.reduce((sum, item) => sum + item.quantity, 0);
+  const dailyOmzet = dailyItems.reduce((sum, item) => sum + item.omzet, 0);
+  const dailyTransactionCount = (dailyItemsR.rows as unknown as DashboardDailyItemRow[])
+    .reduce((sum, row) => sum + num(row.count), 0);
+  const hasData = Boolean((hasDataR.rows[0] as { hasData?: boolean } | undefined)?.hasData);
+
+  return {
+    hasData,
+    items,
+    dailyItems,
+    dailyQuantity,
+    dailyOmzet,
+    dailyTransactionCount,
+    dailyStockRemaining: num(stockInR.rows[0]?.quantity) - dailyQuantity,
+    totalPenyusutan: num(penyusutanR.rows[0]?.amount),
+  };
+}
+
 // === Load seluruh data dari DB ===
 export async function loadAllData(): Promise<AppDataSet> {
   // Pastikan kolom baru ada sebelum query (agar tetap online walau belum migrasi).
-  await ensureDatabaseSchema();
+  await ensureSchemaOnce();
 
   const [itemsR, bakulMastersR, stockInR, stockOutR, salesR, bakulRecordsR, opsR, metaR, penyusutanR, priceHistoryR] =
     await Promise.all([
@@ -273,7 +314,7 @@ export async function loadAllData(): Promise<AppDataSet> {
 // === Simpan seluruh data (transaksi atomik) ===
 export async function saveAllData(data: AppDataSet): Promise<void> {
   // Pastikan kolom baru ada sebelum INSERT (agar save tidak gagal di DB lama).
-  await ensureDatabaseSchema();
+  await ensureSchemaOnce();
 
   const {
     sales,
@@ -290,90 +331,155 @@ export async function saveAllData(data: AppDataSet): Promise<void> {
 
   const client = await db.connect();
   try {
-    await client.sql`BEGIN`;
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SET LOCAL statement_timeout = '20s'");
     await client.sql`DELETE FROM items`;
     await client.sql`DELETE FROM bakul_masters`;
-    await client.sql`DELETE FROM stock_in`;
-    await client.sql`DELETE FROM stock_out`;
     await client.sql`DELETE FROM sales`;
     await client.sql`DELETE FROM bakul_records`;
     await client.sql`DELETE FROM ops_records`;
     await client.sql`DELETE FROM penyusutan`;
     await client.sql`DELETE FROM price_history`;
 
-    // Items
-    for (const item of items) {
-      await client.sql`
-        INSERT INTO items (id, name, buy_price) VALUES (${item.id}, ${item.name}, ${item.buyPrice})
-      `;
+    const incomingStockIn = uniqueById(stockIn);
+    const incomingStockOut = uniqueById(stockOut);
+    const [existingStockIn, existingStockOut] = await Promise.all([
+      client.query<{ id: string }>("SELECT id FROM stock_in"),
+      client.query<{ id: string }>("SELECT id FROM stock_out"),
+    ]);
+    const stockInIds = new Set(incomingStockIn.map((record) => record.id));
+    const stockOutIds = new Set(incomingStockOut.map((record) => record.id));
+    const deletedStockInIds = existingStockIn.rows
+      .map((record) => record.id)
+      .filter((id) => !stockInIds.has(id));
+    const deletedStockOutIds = existingStockOut.rows
+      .map((record) => record.id)
+      .filter((id) => !stockOutIds.has(id));
+    if (deletedStockInIds.length > 0) {
+      await client.query("DELETE FROM stock_in WHERE id = ANY($1::text[])", [deletedStockInIds]);
     }
-    // Bakul masters
-    for (const m of bakulMasters) {
-      await client.sql`
-        INSERT INTO bakul_masters (id, name, sell_price) VALUES (${m.id}, ${m.name}, ${m.sellPrice ?? 0})
-      `;
+    if (deletedStockOutIds.length > 0) {
+      await client.query("DELETE FROM stock_out WHERE id = ANY($1::text[])", [deletedStockOutIds]);
     }
-    // Stock in
-    for (const r of stockIn) {
-      await client.sql`
-        INSERT INTO stock_in (id, date, item_name, quantity, buy_price, bird_count, weighings)
-        VALUES (${r.id}, ${r.date}, ${r.itemName}, ${r.quantity}, ${r.buyPrice}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
-      `;
-    }
-    // Stock out
-    for (const r of stockOut) {
-      await client.sql`
-        INSERT INTO stock_out (id, date, bakul_name, item_name, quantity, price, buy_price, stock_in_id, stock_out_group_id, sale_type, payment_method, bird_count, weighings)
-        VALUES (${r.id}, ${r.date}, ${r.bakulName}, ${r.itemName}, ${r.quantity}, ${r.price}, ${r.buyPrice ?? 0}, ${r.stockInId ?? ""}, ${r.stockOutGroupId ?? ""}, ${r.saleType ?? "eceran"}, ${r.paymentMethod ?? "cash"}, ${r.birdCount ?? null}, ${JSON.stringify(r.weighings ?? [])}::jsonb)
-      `;
-    }
-    // Price history
-    for (const ph of priceHistory) {
-      await client.sql`
-        INSERT INTO price_history (id, item_id, buy_price, sell_price, effective_at)
-        VALUES (${ph.id}, ${ph.itemId}, ${ph.buyPrice}, ${ph.sellPrice}, ${ph.effectiveAt})
-      `;
-    }
-    // Sales
-    for (let i = 0; i < sales.length; i++) {
-      const s = sales[i];
-      await client.sql`
-        INSERT INTO sales (date, modal_qty, modal_total, sale_qty, sale_total, shrink, target, gross_profit, difference, operational, net_profit, note, position)
-        VALUES (${s.date}, ${s.modalQty}, ${s.modalTotal}, ${s.saleQty}, ${s.saleTotal}, ${s.shrink}, ${s.target}, ${s.grossProfit}, ${s.difference}, ${s.operational}, ${s.netProfit}, ${s.note ?? ""}, ${i})
-      `;
-    }
-    // Bakul records
-    for (let i = 0; i < bakulRecords.length; i++) {
-      const b = bakulRecords[i];
-      await client.sql`
-        INSERT INTO bakul_records (date, name, bill, paid, balance, note, position)
-        VALUES (${b.date}, ${b.name}, ${b.bill}, ${b.paid}, ${b.balance}, ${b.note ?? ""}, ${i})
-      `;
-    }
-    // Ops records
-    for (let i = 0; i < ops.length; i++) {
-      const o = ops[i];
-      // [BARU] Sertakan id; fallback ke JS UUID kalau belum ada
-      const recordId = o.id || jsUUID();
-      await client.sql`
-        INSERT INTO ops_records (id, date, description, amount, note, position)
-        VALUES (${recordId}, ${o.date}, ${o.description}, ${o.amount}, ${o.note ?? ""}, ${i})
-      `;
-    }
-    // Penyusutan
-    for (const p of penyusutan) {
-      await client.sql`
-        INSERT INTO penyusutan (id, date, item_name, expected_stock, actual_stock, amount)
-        VALUES (${p.id}, ${p.date}, ${p.itemName}, ${p.expectedStock}, ${p.actualStock}, ${p.amount})
-      `;
-    }
+
+    await bulkInsert(client, "items", ["id", "name", "buy_price"],
+      items.map((item) => [item.id, item.name, item.buyPrice]));
+    await bulkInsert(client, "bakul_masters", ["id", "name", "sell_price"],
+      bakulMasters.map((master) => [master.id, master.name, master.sellPrice ?? 0]));
+
+    await bulkInsert(client, "stock_in",
+      ["id", "date", "item_name", "quantity", "buy_price", "bird_count", "weighings"],
+      incomingStockIn.map((record) => [
+        record.id,
+        record.date,
+        record.itemName,
+        record.quantity,
+        record.buyPrice,
+        record.birdCount ?? null,
+        JSON.stringify(record.weighings ?? []),
+      ]),
+      {
+        jsonbColumns: [6],
+        onConflict: ` ON CONFLICT (id) DO UPDATE SET
+          date = EXCLUDED.date, item_name = EXCLUDED.item_name, quantity = EXCLUDED.quantity,
+          buy_price = EXCLUDED.buy_price, bird_count = EXCLUDED.bird_count, weighings = EXCLUDED.weighings`,
+      }
+    );
+    await bulkInsert(client, "stock_out",
+      ["id", "date", "bakul_name", "item_name", "quantity", "price", "buy_price", "stock_in_id",
+        "stock_out_group_id", "sale_type", "payment_method", "bird_count", "weighings"],
+      incomingStockOut.map((record) => [
+        record.id,
+        record.date,
+        record.bakulName,
+        record.itemName,
+        record.quantity,
+        record.price,
+        record.buyPrice ?? 0,
+        record.stockInId ?? "",
+        record.stockOutGroupId ?? "",
+        record.saleType ?? "eceran",
+        record.paymentMethod ?? "cash",
+        record.birdCount ?? null,
+        JSON.stringify(record.weighings ?? []),
+      ]),
+      {
+        jsonbColumns: [12],
+        onConflict: ` ON CONFLICT (id) DO UPDATE SET
+          date = EXCLUDED.date, bakul_name = EXCLUDED.bakul_name, item_name = EXCLUDED.item_name,
+          quantity = EXCLUDED.quantity, price = EXCLUDED.price, buy_price = EXCLUDED.buy_price,
+          stock_in_id = EXCLUDED.stock_in_id, stock_out_group_id = EXCLUDED.stock_out_group_id,
+          sale_type = EXCLUDED.sale_type, payment_method = EXCLUDED.payment_method,
+          bird_count = EXCLUDED.bird_count, weighings = EXCLUDED.weighings`,
+      }
+    );
+    await bulkInsert(client, "price_history",
+      ["id", "item_id", "buy_price", "sell_price", "effective_at"],
+      priceHistory.map((record) => [
+        record.id,
+        record.itemId,
+        record.buyPrice,
+        record.sellPrice,
+        record.effectiveAt,
+      ]));
+    await bulkInsert(client,
+      "sales",
+      ["date", "modal_qty", "modal_total", "sale_qty", "sale_total", "shrink", "target",
+        "gross_profit", "difference", "operational", "net_profit", "note", "position"],
+      sales.map((record, position) => [
+        record.date,
+        record.modalQty,
+        record.modalTotal,
+        record.saleQty,
+        record.saleTotal,
+        record.shrink,
+        record.target,
+        record.grossProfit,
+        record.difference,
+        record.operational,
+        record.netProfit,
+        record.note ?? "",
+        position,
+      ]));
+    await bulkInsert(client, "bakul_records",
+      ["date", "name", "bill", "paid", "balance", "note", "position"],
+      bakulRecords.map((record, position) => [
+        record.date,
+        record.name,
+        record.bill,
+        record.paid,
+        record.balance,
+        record.note ?? "",
+        position,
+      ]));
+    await bulkInsert(client, "ops_records",
+      ["id", "date", "description", "amount", "note", "position"],
+      ops.map((record, position) => [
+        record.id || jsUUID(),
+        record.date,
+        record.description,
+        record.amount,
+        record.note ?? "",
+        position,
+      ]));
+    await bulkInsert(client, "penyusutan",
+      ["id", "date", "item_name", "expected_stock", "actual_stock", "amount"],
+      penyusutan.map((record) => [
+        record.id,
+        record.date,
+        record.itemName,
+        record.expectedStock,
+        record.actualStock,
+        record.amount,
+      ]));
     // Meta (ops_categories JSONB)
     await client.sql`
       UPDATE app_meta SET ops_categories = ${JSON.stringify(opsCategories)}::jsonb, updated_at = now() WHERE id = 1
     `;
-    await client.sql`COMMIT`;
+    await client.query("COMMIT");
   } catch (err) {
-    await client.sql`ROLLBACK`;
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
@@ -432,9 +538,13 @@ export async function loadActivityLogs(): Promise<ActivityLog[]> {
 
 // === Reset seluruh data ke awal kosong ===
 export async function resetAllData(): Promise<void> {
+  await ensureSchemaOnce();
+
   const client = await db.connect();
   try {
-    await client.sql`BEGIN`;
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SET LOCAL statement_timeout = '20s'");
     await client.sql`DELETE FROM items`;
     await client.sql`DELETE FROM bakul_masters`;
     await client.sql`DELETE FROM stock_in`;
@@ -445,9 +555,9 @@ export async function resetAllData(): Promise<void> {
     await client.sql`DELETE FROM penyusutan`;
     await client.sql`DELETE FROM price_history`;
     await client.sql`UPDATE app_meta SET ops_categories = '[]'::jsonb, updated_at = now() WHERE id = 1`;
-    await client.sql`COMMIT`;
+    await client.query("COMMIT");
   } catch (err) {
-    await client.sql`ROLLBACK`;
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();

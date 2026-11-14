@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadAllData, resetAllData, saveAllData, type AppDataSet } from "@/lib/db";
+import { loadAllData, loadDashboardSnapshot, resetAllData, saveAllData, type AppDataSet } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
 
 export const dynamic = "force-dynamic";
@@ -18,22 +18,24 @@ const entityLabel: Record<string, string> = {
 };
 
 // Tanggal hari ini dalam format ISO (YYYY-MM-DD) sesuai zona waktu lokal server.
-export const todayISO = () => {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-};
-
-// Penguncian Harian (Daily Lock): record dengan tanggal < hari ini dianggap terkunci.
-const isLockedDate = (date: string): boolean =>
-  typeof date === "string" && date.length >= 10 && date < todayISO();
+const jakartaFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Jakarta",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const todayISO = () => jakartaFormatter.format(new Date());
 
 // GET /api/data -> ambil seluruh data
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (request.nextUrl.searchParams.get("scope") === "dashboard") {
+      const requestedDate = request.nextUrl.searchParams.get("date") ?? "";
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : todayISO();
+      const data = await loadDashboardSnapshot(date);
+      return NextResponse.json({ ok: true, data });
+    }
+
     const data = await loadAllData();
     return NextResponse.json({ ok: true, data });
   } catch (err) {
@@ -87,17 +89,19 @@ export async function POST(request: NextRequest) {
     // Bandingkan payload masuk dengan DB saat ini. Jika ada record tanggal lampau
     // yang diubah/dihapus/ditambah, tolak permintaan. (Dilewatkan saat `force`.)
     if (!force) {
+      const today = todayISO();
+      const isLocked = (date: string) => typeof date === "string" && date.length >= 10 && date < today;
       const current = await loadAllData();
       const mergeWithGuard = <T extends { id?: string; date: string }>(
       currentList: T[],
       incomingList: T[]
       ): { merged: T[]; rejected: number } => {
       const currentIds = new Set(currentList.map((r) => r.id).filter(Boolean));
-      const protectedOld = currentList.filter((r) => isLockedDate(r.date));
+      const protectedOld = currentList.filter((r) => isLocked(r.date));
 
       let rejected = 0;
       const acceptedIncoming = incomingList.filter((r) => {
-       const locked = isLockedDate(r.date);
+       const locked = isLocked(r.date);
        const existsInDb = !!r.id && currentIds.has(r.id);
        if (locked && existsInDb) {
          rejected += 1; // ini edit/hapus pada data lama yang terkunci -> ditolak (benar)

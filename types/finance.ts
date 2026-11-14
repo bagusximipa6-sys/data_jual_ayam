@@ -13,6 +13,17 @@ export type DailySale = {
   note: string;
 };
 
+export type DashboardSnapshot = {
+  hasData: boolean;
+  items: ItemMaster[];
+  dailyItems: Array<{ itemName: string; quantity: number; omzet: number }>;
+  dailyQuantity: number;
+  dailyOmzet: number;
+  dailyTransactionCount: number;
+  dailyStockRemaining: number;
+  totalPenyusutan: number;
+};
+
 export type BakulRecord = {
   date: string;
   name: string;

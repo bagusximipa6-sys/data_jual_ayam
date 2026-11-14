@@ -20,7 +20,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { BakulTab } from "@/components/BakulTab";
 import { OverdueTab } from "@/components/OverdueTab";
@@ -35,7 +35,7 @@ import { StockInTab } from "@/components/StockInTab";
 import { StockOutTab } from "@/components/StockOutTab";
 import {
   fetchAllFromServer,
-  hasAnyServerData,
+  fetchDashboardFromServer,
   pushAllToServer,
   type LocalDataset,
   type SyncStatus,
@@ -47,6 +47,7 @@ import {
   ActivityLog,
   BakulMaster,
   BakulRecord,
+  DashboardSnapshot,
   DailySale,
   ItemMaster,
   OperationalRecord,
@@ -113,6 +114,7 @@ const resolveActivePrice = (
 
 export default function Home() {
   const { user } = useUser();
+  const userId = user?.id;
   const isClient = useSyncExternalStore(subscribeToClient, () => true, () => false);
   const isAdmin = user?.publicMetadata?.role === "admin";
   const [menu, setMenu] = useState("dashboard");
@@ -123,6 +125,15 @@ export default function Home() {
         ? "staf"
         : "user";
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
+  const skipNextAutoSaveRef = useRef(false);
+  const fullDatasetLoadedRef = useRef(false);
+  const fullDatasetLoadingRef = useRef(false);
+  const dashboardInitializedRef = useRef(false);
+  const dashboardDateRef = useRef<string | null>(null);
+  const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [dashboardInitialized, setDashboardInitialized] = useState(false);
+  const [fullDatasetLoaded, setFullDatasetLoaded] = useState(false);
+  const [fullDatasetLoading, setFullDatasetLoading] = useState(false);
 
   const [sales, setSales] = useState<DailySale[]>(initialSales as DailySale[]);
   const [bakulRecords, setBakulRecords] = useState<BakulRecord[]>(initialBakulRecords as BakulRecord[]);
@@ -139,6 +150,7 @@ export default function Home() {
   const [reportDate, setReportDate] = useState<string>(() => {
     return getTodayDate();
   });
+  const initialReportDateRef = useRef(reportDate);
 
   const reconcileStockOutLinks = useCallback(
     (incomingStockIn: StockInRecord[], incomingStockOut: StockOutRecord[]): StockOutRecord[] => {
@@ -270,43 +282,37 @@ export default function Home() {
     }
   }, [isAdmin, isClient, refreshActivityLogs]);
 
-// This effect runs only once on the client to decide the source of truth.
+  // Load only dashboard aggregates until a history tab is opened.
   useEffect(() => {
     if (!isClient) return;
 
-    if (!user) {
+    if (!userId) {
       setSyncStatus("offline");
       return;
     }
+    if (dashboardInitializedRef.current || fullDatasetLoadedRef.current) return;
 
-    const initializeData = async () => {
+    let cancelled = false;
+    const initializeDashboard = async () => {
       setSyncStatus("loading");
-      const serverData = await fetchAllFromServer();
+      const requestedDate = initialReportDateRef.current;
+      const snapshot = await fetchDashboardFromServer(requestedDate);
 
-      if (serverData === null) {
-        // Network error or server issue, app is offline.
-        // Data stays at the initial (demo) state from useState initializers.
+      if (cancelled) return;
+      if (snapshot === null) {
         setSyncStatus("offline");
         return;
       }
 
-      if (hasAnyServerData(serverData)) {
-        // Server has data, this is the source of truth.
-        applyDatasetToState({
-          sales: serverData.sales ?? [],
-          bakulRecords: serverData.bakulRecords ?? [],
-          ops: serverData.ops ?? [],
-          items: serverData.items ?? [],
-          bakulMasters: serverData.bakulMasters ?? [],
-          stockIn: serverData.stockIn ?? [],
-          stockOut: serverData.stockOut ?? [],
-          opsCategories: serverData.opsCategories ?? [],
-          penyusutan: serverData.penyusutan ?? [],
-          priceHistory: serverData.priceHistory ?? [],
-        });
+      dashboardInitializedRef.current = true;
+      dashboardDateRef.current = requestedDate;
+      setDashboardSnapshot(snapshot);
+      skipNextAutoSaveRef.current = true;
+      setItems(snapshot.items);
+
+      if (snapshot.hasData) {
         setSyncStatus("saved");
       } else {
-        // Server is empty. Seed it with the initial (demo) data.
         const demoData: LocalDataset = {
           sales: initialSales as DailySale[],
           bakulRecords: initialBakulRecords as BakulRecord[],
@@ -319,17 +325,55 @@ export default function Home() {
           penyusutan: initialPenyusutan as PenyusutanRecord[],
           priceHistory: initialPriceHistory as PriceHistory[],
         };
-setSyncStatus("saving");
+        setSyncStatus("saving");
         const result = await pushAllToServer(demoData);
+        if (cancelled) return;
         setSyncStatus(result.ok ? "saved" : "error");
       }
+
+      setDashboardInitialized(true);
     };
 
-    initializeData();
-  }, [isClient, handleImportData, user, applyDatasetToState]);
+    void initializeDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [isClient, userId]);
+
+  useEffect(() => {
+    if (!isClient || !userId || !dashboardInitialized || fullDatasetLoaded) return;
+    if (dashboardDateRef.current === reportDate) return;
+
+    let cancelled = false;
+    const requestedDate = reportDate;
+    dashboardDateRef.current = requestedDate;
+
+    const refreshDashboard = async () => {
+      const snapshot = await fetchDashboardFromServer(requestedDate);
+      if (cancelled) return;
+      if (!snapshot) {
+        dashboardDateRef.current = null;
+        return;
+      }
+
+      skipNextAutoSaveRef.current = true;
+      setDashboardSnapshot(snapshot);
+      setItems(snapshot.items);
+    };
+
+    void refreshDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardInitialized, fullDatasetLoaded, isClient, reportDate, userId]);
 
   // This effect handles pushing data to the server whenever it changes.
   useEffect(() => {
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return;
+    }
+
     // Don't save during initial load or if offline.
     if (syncStatus === "loading" || syncStatus === "offline" || !isClient || !user) {
       return;
@@ -358,6 +402,47 @@ const result = await pushAllToServer(dataset);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sales, bakulRecords, ops, items, bakulMasters, stockIn, stockOut, opsCategories, penyusutan, priceHistory]);
+
+  const handleMenuChange = async (nextMenu: string) => {
+    if (nextMenu === "dashboard" || nextMenu === "pengawasan" || fullDatasetLoadedRef.current) {
+      setMenu(nextMenu);
+      return;
+    }
+    if (!dashboardInitialized) return;
+    if (fullDatasetLoadingRef.current) return;
+
+    fullDatasetLoadingRef.current = true;
+    setFullDatasetLoading(true);
+    setSyncStatus("loading");
+    const serverData = await fetchAllFromServer();
+
+    if (!serverData) {
+      setSyncStatus("error");
+      fullDatasetLoadingRef.current = false;
+      setFullDatasetLoading(false);
+      return;
+    }
+
+    skipNextAutoSaveRef.current = true;
+    applyDatasetToState({
+      sales: serverData.sales ?? [],
+      bakulRecords: serverData.bakulRecords ?? [],
+      ops: serverData.ops ?? [],
+      items: serverData.items ?? [],
+      bakulMasters: serverData.bakulMasters ?? [],
+      stockIn: serverData.stockIn ?? [],
+      stockOut: serverData.stockOut ?? [],
+      opsCategories: serverData.opsCategories ?? [],
+      penyusutan: serverData.penyusutan ?? [],
+      priceHistory: serverData.priceHistory ?? [],
+    });
+    fullDatasetLoadedRef.current = true;
+    setFullDatasetLoaded(true);
+    setSyncStatus("saved");
+    setMenu(nextMenu);
+    fullDatasetLoadingRef.current = false;
+    setFullDatasetLoading(false);
+  };
 
 // Effect to reset menu: belum login hanya dashboard, dan user non-admin
   // tidak bisa membuka menu yang tidak sesuai dengan role-nya.
@@ -392,33 +477,34 @@ const result = await pushAllToServer(dataset);
   }, [bakulRecords, selectedMonth]);
 
   // === Laporan Harian: rekap barang keluar & omzet per tanggal ===
-  const availableReportDates = useMemo(
-    () => unique(stockOut.map((r) => r.date)).sort().reverse(),
-    [stockOut]
-  );
-
   const dailyRecords = useMemo(
     () => stockOut.filter((r) => r.date === reportDate),
     [stockOut, reportDate]
   );
 
-const dailyQty = useMemo(() => dailyRecords.reduce((sum, r) => sum + r.quantity, 0), [dailyRecords]);
-  const dailyOmzet = useMemo(() => dailyRecords.reduce((sum, r) => sum + r.quantity * r.price, 0), [dailyRecords]);
-  const totalPenyusutan = useMemo(() => penyusutan.reduce((sum, r) => sum + r.amount, 0), [penyusutan]);
-
-const dailyItemSummary = useMemo(() => {
-    const map = new Map<string, { qty: number; omzet: number }>();
-    for (const r of dailyRecords) {
-      const cur = map.get(r.itemName) ?? { qty: 0, omzet: 0 };
-      cur.qty += r.quantity;
-      cur.omzet += r.quantity * r.price;
-      map.set(r.itemName, cur);
-    }
-    return Array.from(map.entries());
-  }, [dailyRecords]);
+  const dailyQty = useMemo(
+    () => fullDatasetLoaded
+      ? dailyRecords.reduce((sum, r) => sum + r.quantity, 0)
+      : dashboardSnapshot?.dailyQuantity ?? 0,
+    [dashboardSnapshot, dailyRecords, fullDatasetLoaded]
+  );
+  const dailyOmzet = useMemo(
+    () => fullDatasetLoaded
+      ? dailyRecords.reduce((sum, r) => sum + r.quantity * r.price, 0)
+      : dashboardSnapshot?.dailyOmzet ?? 0,
+    [dashboardSnapshot, dailyRecords, fullDatasetLoaded]
+  );
+  const totalPenyusutan = useMemo(
+    () => fullDatasetLoaded
+      ? penyusutan.reduce((sum, r) => sum + r.amount, 0)
+      : dashboardSnapshot?.totalPenyusutan ?? 0,
+    [dashboardSnapshot, fullDatasetLoaded, penyusutan]
+  );
 
   // Sisa stok harian = stok masuk tanggal laporan - stok keluar tanggal laporan.
   const dailyStockRemaining = useMemo(() => {
+    if (!fullDatasetLoaded) return dashboardSnapshot?.dailyStockRemaining ?? 0;
+
     const stockInTotal = stockIn
       .filter((r) => r.date === reportDate)
       .reduce((sum, r) => sum + r.quantity, 0);
@@ -426,7 +512,12 @@ const dailyItemSummary = useMemo(() => {
       .filter((r) => r.date === reportDate)
       .reduce((sum, r) => sum + r.quantity, 0);
     return stockInTotal - stockOutTotal;
-  }, [stockIn, stockOut, reportDate]);
+  }, [dashboardSnapshot, fullDatasetLoaded, stockIn, stockOut, reportDate]);
+
+  const dailyTransactionCount = useMemo(
+    () => fullDatasetLoaded ? dailyRecords.length : dashboardSnapshot?.dailyTransactionCount ?? 0,
+    [dailyRecords, dashboardSnapshot, fullDatasetLoaded]
+  );
 
 // === Harga Ayam Hari Ini ===
   // Sumber: Master Barang (buyPrice) + transaksi Barang Keluar pada tanggal terpilih
@@ -435,10 +526,17 @@ const chickenPrices = useMemo(() => {
 
     // Aggregasi harga jual riil dari transaksi Barang Keluar pada hari ini (rata-rata berbobot quantity)
     const todaySellMap = new Map<string, { total: number; qty: number }>();
-    for (const r of dailyRecords) {
+    const dailyItems = fullDatasetLoaded
+      ? dailyRecords.map((record) => ({
+          itemName: record.itemName,
+          quantity: record.quantity,
+          omzet: record.quantity * record.price,
+        }))
+      : dashboardSnapshot?.dailyItems ?? [];
+    for (const r of dailyItems) {
       const key = r.itemName.toLowerCase();
       const cur = todaySellMap.get(key) ?? { total: 0, qty: 0 };
-      cur.total += r.price * r.quantity;
+      cur.total += r.omzet;
       cur.qty += r.quantity;
       todaySellMap.set(key, cur);
     }
@@ -448,7 +546,7 @@ const chickenPrices = useMemo(() => {
       return rec && rec.qty > 0 ? rec.total / rec.qty : null;
     };
 
-    const names = unique([...items.map((i) => i.name), ...dailyRecords.map((r) => r.itemName)]);
+    const names = unique([...items.map((i) => i.name), ...dailyItems.map((r) => r.itemName)]);
     return names
       .filter((n) => n.trim().length > 0)
       .map((name) => {
@@ -461,7 +559,7 @@ const chickenPrices = useMemo(() => {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [items, dailyRecords]);
+  }, [dashboardSnapshot, dailyRecords, fullDatasetLoaded, items]);
 
 const bakulNames = useMemo(() => unique(bakulMasters.map((item) => item.name)), [bakulMasters]);
   const itemNames = useMemo(() => unique(items.map((item) => item.name)), [items]);
@@ -877,8 +975,9 @@ const handleResetData = async () => {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setMenu(key)}
-                  className={`group flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all sm:flex-row sm:px-3 sm:py-2 ${
+                  disabled={fullDatasetLoading || (!dashboardInitialized && key !== "dashboard" && key !== "pengawasan")}
+                  onClick={() => void handleMenuChange(key)}
+                  className={`group flex flex-col items-center justify-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all disabled:cursor-wait disabled:opacity-60 sm:flex-row sm:px-3 sm:py-2 ${
                     active
                       ? "bg-[#191712] text-white shadow-md"
                       : "bg-[#f7f5ef] text-[#706858] hover:bg-[#f0eadb] hover:text-[#191712]"
@@ -969,7 +1068,7 @@ const handleResetData = async () => {
                 />
 <MetricCard
                   label="Jumlah Transaksi"
-                  value={`${dailyRecords.length} Transaksi`}
+                  value={`${dailyTransactionCount} Transaksi`}
                   tone="plain"
                   icon={ShoppingCart}
                 />
